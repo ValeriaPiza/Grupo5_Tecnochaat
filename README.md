@@ -8,7 +8,7 @@
 
 
 
-En este proyecto implemente pues el sistema de comunicación cliente-servidor en java con visual Studio code el proyecto nos permite:
+En este proyecto se implemento pues el sistema de comunicación cliente-servidor en java con visual Studio code el proyecto nos permite:
 
 * Enviar mensajes privados y grupales
 * Enviar y reproducir notas de voz
@@ -16,7 +16,7 @@ En este proyecto implemente pues el sistema de comunicación cliente-servidor en
 * consultar el historial de chats y audio.
 
 
-Los protocolos que use fueron:
+Los protocolos que usados fueron:
 
 TCP: Para mensajes, control de sesión y para las notas de voz
 UDP: para las llamadas.
