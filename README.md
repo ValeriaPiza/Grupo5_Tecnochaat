@@ -2,9 +2,9 @@
 
 
 ## Integrantes: 
-Paula Andrea Ferreira A00403846
-Valeria Piza Saavedra A00405037
-Manuela Marin Millan A00406386
+> Paula Andrea Ferreira A00403846
+> Valeria Piza Saavedra A00405037
+> Manuela Marin Millan A00406386
 
 
 
