@@ -1,8 +1,5 @@
-# Grupo5_TecnoChat
-
-
-## Integrantes: Paula Andrea Ferreira A00403846
-
+Integrantes:
+Paula Andrea Ferreira Ladino A00403846
 
 
 En este proyecto implemente pues el sistema de comunicación cliente-servidor en java con visual Studio code el proyecto nos permite:
@@ -10,6 +7,7 @@ En este proyecto implemente pues el sistema de comunicación cliente-servidor en
 * Enviar mensajes privados y grupales
 * Enviar y reproducir notas de voz
 * Realizar llamadas de voz en tiempo real entre clientes conectados
+
 * consultar el historial de chats y audio.
 
 
