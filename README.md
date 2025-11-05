@@ -3,6 +3,8 @@
 
 ## Integrantes: Paula Andrea Ferreira A00403846
 
+Valeria
+Manuela
 
 
 En este proyecto implemente pues el sistema de comunicación cliente-servidor en java con visual Studio code el proyecto nos permite:
