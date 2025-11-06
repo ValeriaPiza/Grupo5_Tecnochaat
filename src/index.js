@@ -182,7 +182,34 @@ function showStatus(message, type, container) {
         container.innerHTML = '';
     }, 5000);
 }
+// Agregar event listeners para navegación
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.nav button').forEach(button => {
+        button.addEventListener('click', function() {
+            const sectionId = this.getAttribute('data-section');
+            showSection(sectionId);
+        });
+    });
+    
+    // Cargar usuarios automáticamente al abrir la sección
+    document.querySelector('button[data-section="users"]').addEventListener('click', loadOnlineUsers);
 
-// Cargar usuarios al abrir la sección
-document.querySelector('.nav button[onclick="showSection(\'users\')"]')
-    .addEventListener('click', loadOnlineUsers);
+     // Agregar esto para el botón de actualizar usuarios
+    const refreshBtn = document.querySelector('button[onclick="loadOnlineUsers()"]');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadOnlineUsers);
+    }
+    
+    // También para el botón de cargar historial
+    const historyBtn = document.querySelector('button[onclick="loadHistory()"]');
+    if (historyBtn) {
+        historyBtn.addEventListener('click', loadHistory);
+    }
+    
+});
+window.loadOnlineUsers = loadOnlineUsers;
+window.loadHistory = loadHistory;
+window.showSection = showSection;
+window.sendMessage = sendMessage;
+window.createGroup = createGroup;
+window.toggleHistoryInput = toggleHistoryInput;

@@ -1,10 +1,10 @@
 # Grupo5_TecnoChat
 
 
-## Integrantes: Paula Andrea Ferreira A00403846
-
-Valeria
-Manuela
+## Integrantes: 
+Paula Andrea Ferreira A00403846
+Valeria Piza Saavedra A00405037
+Manuela Marin Millan A00
 
 
 En este proyecto implemente pues el sistema de comunicación cliente-servidor en java con visual Studio code el proyecto nos permite:

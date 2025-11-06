@@ -1,5 +1,19 @@
-# Ignore Gradle project-specific cache directory
-.gradle
+# Archivos compilados
+build/
+bin/
+out/
+target/
+*.class
+*.jar
+*.war
+*.ear
 
-# Ignore Gradle build output directory
-build
+# Gradle
+.gradle/
+gradle-app.setting
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
