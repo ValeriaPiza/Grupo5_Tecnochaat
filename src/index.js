@@ -207,6 +207,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
 });
+
 window.loadOnlineUsers = loadOnlineUsers;
 window.loadHistory = loadHistory;
 window.showSection = showSection;
