@@ -163,12 +163,22 @@ app.get('/api/users/online', async (req, res) => {
 app.post('/api/messages/private', async (req, res) => {
     try {
         const { to, message } = req.body;
-        // Por ahora solo confirmamos
+        
+        // AGREGAR ESTO:
+        console.log('📤 MENSAJE PRIVADO ENVIADO:');
+        console.log('   Para:', to);
+        console.log('   Mensaje:', message);
+        console.log('   Timestamp:', new Date().toLocaleString());
+        
+        const commands = ['1', to, message];
+        const responses = await smartClient.sendCommand(commands);
+        
         res.json({ 
             success: true, 
             message: 'Mensaje enviado correctamente' 
         });
     } catch (error) {
+        console.error('❌ Error enviando mensaje privado:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
