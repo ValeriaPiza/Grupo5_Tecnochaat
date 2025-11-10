@@ -352,11 +352,22 @@ app.post('/api/messages/private', async (req, res) => {
 app.post('/api/messages/group', async (req, res) => {
     try {
         const { group, message } = req.body;
+        
+        console.log('MENSAJE GRUPAL ENVIADO:');
+        console.log('  Grupo:', group);
+        console.log('  Mensaje:', message);
+        
+        const commands = ['3', group, message];
+        const responses = await persistentClient.sendCommand(commands);
+        
+        console.log('   Respuesta servidor:', responses);
+        
         res.json({ 
             success: true, 
             message: 'Mensaje grupal enviado' 
         });
     } catch (error) {
+        console.error('Error:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -367,11 +378,21 @@ app.post('/api/messages/group', async (req, res) => {
 app.post('/api/groups', async (req, res) => {
     try {
         const { name } = req.body;
+        
+        console.log('CREANDO GRUPO:');
+        console.log('   Nombre:', name);
+        
+        const commands = ['2', name, '']; // El '' es para salir de agregar usuarios
+        const responses = await persistentClient.sendCommand(commands);
+        
+        console.log('   Respuesta servidor:', responses);
+        
         res.json({ 
             success: true, 
             message: 'Grupo creado correctamente' 
         });
     } catch (error) {
+        console.error('Error:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -382,11 +403,30 @@ app.post('/api/groups', async (req, res) => {
 app.get('/api/history/private', async (req, res) => {
     try {
         const { user } = req.query;
+        
+        console.log('SOLICITANDO HISTORIAL PRIVADO:');
+        console.log('   Usuario:', user);
+        
+        // Ejecutar comando REAL en servidor Java (opción 7)
+        const commands = ['7', user];
+        const responses = await persistentClient.sendCommand(commands);
+        
+        console.log('   Respuesta servidor:', responses);
+        
+        // Filtrar líneas del historial real
+        const history = responses.filter(line => 
+            line.includes('[') && line.includes(']') && 
+            !line.includes('===') && !line.includes('MENU')
+        );
+        
+        console.log('   Historial encontrado:', history.length, 'mensajes');
+        
         res.json({ 
             success: true, 
-            history: [] 
+            history: history 
         });
     } catch (error) {
+        console.error('Error obteniendo historial privado:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -397,11 +437,30 @@ app.get('/api/history/private', async (req, res) => {
 app.get('/api/history/group', async (req, res) => {
     try {
         const { group } = req.query;
+        
+        console.log('SOLICITANDO HISTORIAL GRUPAL:');
+        console.log('   Grupo:', group);
+        
+        // Ejecutar comando REAL en servidor Java (opción 8)
+        const commands = ['8', group];
+        const responses = await persistentClient.sendCommand(commands);
+        
+        console.log('   Respuesta servidor:', responses);
+        
+        // Filtrar líneas del historial real
+        const history = responses.filter(line => 
+            line.includes('[') && line.includes(']') && 
+            !line.includes('===') && !line.includes('MENU')
+        );
+        
+        console.log('   Historial encontrado:', history.length, 'mensajes');
+        
         res.json({ 
             success: true, 
-            history: [] 
+            history: history 
         });
     } catch (error) {
+        console.error('Error obteniendo historial grupal:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
