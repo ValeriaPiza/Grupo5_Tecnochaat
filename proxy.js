@@ -19,6 +19,15 @@ class PersistentTCPClient {
         this.responseBuffer = '';
         this.pendingResolve = null;
         this.pendingReject = null;
+        this.commandQueue = [];
+        this.isProcessing = false;
+        this.expectingInteractiveResponse = false;
+        this.interactiveCommands = [];
+        this.interactiveStep = 0;
+        this.interactiveResolve = null;
+        this.interactiveReject = null;
+        this.waitingForPrompt = false;
+
     }
 
     async connect() {
@@ -40,27 +49,14 @@ class PersistentTCPClient {
             this.client.on('data', (data) => {
                 this.responseBuffer += data.toString();
                 
-                // Buscar líneas completas en el buffer
                 const lines = this.responseBuffer.split('\n');
-                
-                // Mantener la última línea incompleta en el buffer
                 this.responseBuffer = lines.pop() || '';
                 
                 lines.forEach(line => {
                     const trimmed = line.trim();
                     if (trimmed) {
                         console.log('Servidor:', trimmed);
-                        
-                        // Si hay una promesa pendiente y encontramos la respuesta esperada
-                        if (this.pendingResolve) {
-                            // Buscar específicamente la línea CLIENTES_CONECTADOS
-                            if (trimmed.includes('CLIENTES_CONECTADOS:')) {
-                                this.pendingResolve(trimmed);
-                                this.pendingResolve = null;
-                                this.pendingReject = null;
-                            }
-                            // Para otros comandos, podrías agregar más condiciones aquí
-                        }
+                        this.handleServerResponse(trimmed);
                     }
                 });
             });
@@ -79,16 +75,148 @@ class PersistentTCPClient {
                     this.pendingResolve = null;
                     this.pendingReject = null;
                 }
+                if (this.interactiveReject) {
+                    this.interactiveReject(err);
+                    this.interactiveResolve = null;
+                    this.interactiveReject = null;
+                }
                 this.reconnect();
             });
         });
     }
 
-    reconnect() {
-        setTimeout(() => {
-            console.log('Intentando reconectar...');
-            this.connect().catch(console.error);
-        }, 3000);
+    handleServerResponse(trimmed) {
+        console.log('Manejando respuesta:', trimmed);
+        
+        // Manejar respuestas interactivas
+        if (this.expectingInteractiveResponse && this.interactiveResolve) {
+            // Si recibimos un error, rechazar
+            if (trimmed.includes('Opcion no valida') || trimmed.includes('Error')) {
+                console.log('Error detectado, rechazando...');
+                this.interactiveReject(new Error(trimmed));
+                this.resetInteractiveState();
+                return;
+            }
+            
+            // 🔥 DETECTAR PETICIONES ESPECÍFICAS DEL SERVIDOR
+            if (trimmed.includes('Ingresa el nombre del destinatario:') || 
+                trimmed.includes('Ingresa el mensaje:') ||
+                trimmed.includes('Elige opcion:')) {
+                
+                console.log('Servidor está pidiendo información, procesando siguiente paso...');
+                this.waitingForPrompt = false;
+                this.processNextInteractiveStep();
+                return;
+            }
+            
+            // Si recibimos el menú completo, puede ser que el servidor esté listo para el siguiente paso
+            if (trimmed.includes('=== MENU TECNOCHAT ===')) {
+                console.log('Menú recibido, esperando prompt específico...');
+                this.waitingForPrompt = true;
+                return;
+            }
+            
+            // Si estamos en el paso final y recibimos confirmación
+            if (this.interactiveStep >= this.interactiveCommands.length && 
+                !trimmed.includes('=== MENU TECNOCHAT ===')) {
+                console.log('Comando completado exitosamente');
+                this.interactiveResolve('Mensaje enviado correctamente');
+                this.resetInteractiveState();
+            }
+        }
+        
+        // Manejar respuestas normales
+        if (this.pendingResolve && trimmed.includes('CLIENTES_CONECTADOS:')) {
+            this.pendingResolve(trimmed);
+            this.pendingResolve = null;
+            this.pendingReject = null;
+        }
+    }
+
+    async sendInteractiveCommand(commands) {
+        if (!this.isConnected) {
+            await this.connect();
+        }
+
+        return new Promise((resolve, reject) => {
+            this.expectingInteractiveResponse = true;
+            this.interactiveCommands = commands;
+            this.interactiveStep = 0;
+            this.interactiveResolve = resolve;
+            this.interactiveReject = reject;
+            this.waitingForPrompt = false;
+
+            console.log('Iniciando comando interactivo con pasos:', commands);
+            
+            // Iniciar el primer paso inmediatamente
+            this.processNextInteractiveStep();
+            
+            // Timeout más largo para interacción
+            setTimeout(() => {
+                if (this.interactiveReject) {
+                    this.interactiveReject(new Error('Timeout en comando interactivo'));
+                    this.resetInteractiveState();
+                }
+            }, 20000);
+        });
+    }
+
+    processNextInteractiveStep() {
+        if (this.interactiveStep < this.interactiveCommands.length) {
+            const command = this.interactiveCommands[this.interactiveStep];
+            console.log(`Enviando paso ${this.interactiveStep + 1}/${this.interactiveCommands.length}:`, command);
+            
+            // Pequeño delay para asegurar que el servidor esté listo
+            setTimeout(() => {
+                this.client.write(command + '\n');
+                this.interactiveStep++;
+                
+                // Si no es el último paso, esperar prompt específico
+                if (this.interactiveStep < this.interactiveCommands.length) {
+                    this.waitingForPrompt = true;
+                }
+            }, 500);
+        } else {
+            console.log('Todos los pasos completados, esperando confirmación final...');
+        }
+    }
+
+    resetInteractiveState() {
+        this.expectingInteractiveResponse = false;
+        this.interactiveCommands = [];
+        this.interactiveStep = 0;
+        this.interactiveResolve = null;
+        this.interactiveReject = null;
+        this.waitingForPrompt = false;
+    }
+
+    async sendPrivateMessage(to, message) {
+        try {
+            console.log('Preparando mensaje privado para:', to);
+            
+            // 🔥 ENVIAR SOLO EL COMANDO INICIAL PRIMERO
+            await this.sendCommand('1');
+            
+            // Esperar un momento para que el servidor procese
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // 🔥 LUEGO ENVIAR EL DESTINATARIO
+            console.log('Enviando destinatario:', to);
+            await this.sendCommand(to);
+            
+            // Esperar un momento
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // 🔥 FINALMENTE ENVIAR EL MENSAJE
+            console.log('Enviando mensaje:', message);
+            await this.sendCommand(message);
+            
+            return { success: true, message: 'Mensaje enviado correctamente' };
+            
+        } catch (error) {
+            console.error('Error enviando mensaje privado:', error);
+            throw error;
+        }
     }
 
     async sendCommand(command) {
@@ -97,28 +225,24 @@ class PersistentTCPClient {
         }
 
         return new Promise((resolve, reject) => {
-            this.pendingResolve = resolve;
-            this.pendingReject = reject;
-
-            console.log('Enviando comando:', command);
+            // Para comandos simples, no esperamos una respuesta específica
+            console.log('Enviando comando simple:', command);
             this.client.write(command + '\n');
-
-            // Timeout después de 5 segundos
+            
+            // Resolver inmediatamente para comandos de interacción
+            // (el servidor manejará la conversación)
             setTimeout(() => {
-                if (this.pendingReject) {
-                    this.pendingReject(new Error('Timeout esperando respuesta'));
-                    this.pendingResolve = null;
-                    this.pendingReject = null;
-                }
-            }, 5000);
+                resolve('Comando enviado');
+            }, 300);
         });
     }
+
+
 
     async getOnlineUsers() {
         try {
             const response = await this.sendCommand('11');
             
-            // Extraer usuarios de la respuesta
             if (response.includes('CLIENTES_CONECTADOS:')) {
                 const usersPart = response.split('CLIENTES_CONECTADOS:')[1];
                 if (usersPart && usersPart.trim() !== 'No hay otros clientes conectados.') {
@@ -132,8 +256,14 @@ class PersistentTCPClient {
             return [];
         }
     }
-}
 
+    reconnect() {
+        setTimeout(() => {
+            console.log('Intentando reconectar...');
+            this.connect().catch(console.error);
+        }, 3000);
+    }
+}
 // Crear cliente persistente
 const persistentClient = new PersistentTCPClient(JAVA_SERVER_HOST, JAVA_SERVER_PORT);
 
@@ -164,14 +294,13 @@ app.post('/api/messages/private', async (req, res) => {
     try {
         const { to, message } = req.body;
         
-        // AGREGAR ESTO:
         console.log('📤 MENSAJE PRIVADO ENVIADO:');
         console.log('   Para:', to);
         console.log('   Mensaje:', message);
         console.log('   Timestamp:', new Date().toLocaleString());
         
-        const commands = ['1', to, message];
-        const responses = await smartClient.sendCommand(commands);
+        // Usar el nuevo método específico para mensajes privados
+        const result = await persistentClient.sendPrivateMessage(to, message);
         
         res.json({ 
             success: true, 
