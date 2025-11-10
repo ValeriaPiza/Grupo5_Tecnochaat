@@ -98,7 +98,7 @@ class PersistentTCPClient {
                 return;
             }
             
-            // 🔥 DETECTAR PETICIONES ESPECÍFICAS DEL SERVIDOR
+            //DETECTAR PETICIONES ESPECÍFICAS DEL SERVIDOR
             if (trimmed.includes('Ingresa el nombre del destinatario:') || 
                 trimmed.includes('Ingresa el mensaje:') ||
                 trimmed.includes('Elige opcion:')) {
@@ -194,20 +194,20 @@ class PersistentTCPClient {
         try {
             console.log('Preparando mensaje privado para:', to);
             
-            // 🔥 ENVIAR SOLO EL COMANDO INICIAL PRIMERO
+            // ENVIAR SOLO EL COMANDO INICIAL PRIMERO
             await this.sendCommand('1');
             
             // Esperar un momento para que el servidor procese
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // 🔥 LUEGO ENVIAR EL DESTINATARIO
+            // LUEGO ENVIAR EL DESTINATARIO
             console.log('Enviando destinatario:', to);
             await this.sendCommand(to);
             
             // Esperar un momento
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // 🔥 FINALMENTE ENVIAR EL MENSAJE
+            // FINALMENTE ENVIAR EL MENSAJE
             console.log('Enviando mensaje:', message);
             await this.sendCommand(message);
             
@@ -237,25 +237,59 @@ class PersistentTCPClient {
         });
     }
 
+    async sendCommandAndWaitForResponse(command, expectedResponse) {
+        if (!this.isConnected) {
+            await this.connect();
+        }
 
+        return new Promise((resolve, reject) => {
+            this.pendingResolve = resolve;
+            this.pendingReject = reject;
+
+            console.log('Enviando comando y esperando respuesta:', command);
+            this.client.write(command + '\n');
+
+            // Timeout para evitar bloqueos eternos
+            setTimeout(() => {
+                if (this.pendingReject) {
+                    this.pendingReject(new Error('Timeout esperando respuesta'));
+                    this.pendingResolve = null;
+                    this.pendingReject = null;
+                }
+            }, 5000);
+        });
+    }
 
     async getOnlineUsers() {
         try {
-            const response = await this.sendCommand('11');
+            console.log('Solicitando lista de usuarios conectados...');
             
-            if (response.includes('CLIENTES_CONECTADOS:')) {
+            //espera respuesta
+            const response = await this.sendCommandAndWaitForResponse('11', 'CLIENTES_CONECTADOS:');
+            
+            console.log('Respuesta recibida para usuarios:', response);
+            
+            if (response && response.includes('CLIENTES_CONECTADOS:')) {
                 const usersPart = response.split('CLIENTES_CONECTADOS:')[1];
                 if (usersPart && usersPart.trim() !== 'No hay otros clientes conectados.') {
                     const users = usersPart.split(',').map(user => user.trim()).filter(user => user);
+                    console.log('Usuarios encontrados:', users);
                     return users;
+                } else {
+                    console.log('No hay otros usuarios conectados');
+                    return [];
                 }
             }
+            
+            console.log('Formato de respuesta inesperado:', response);
             return [];
+            
         } catch (error) {
             console.error('Error obteniendo usuarios:', error);
             return [];
         }
     }
+
 
     reconnect() {
         setTimeout(() => {
@@ -294,7 +328,7 @@ app.post('/api/messages/private', async (req, res) => {
     try {
         const { to, message } = req.body;
         
-        console.log('📤 MENSAJE PRIVADO ENVIADO:');
+        console.log('MENSAJE PRIVADO ENVIADO:');
         console.log('   Para:', to);
         console.log('   Mensaje:', message);
         console.log('   Timestamp:', new Date().toLocaleString());
@@ -307,7 +341,7 @@ app.post('/api/messages/private', async (req, res) => {
             message: 'Mensaje enviado correctamente' 
         });
     } catch (error) {
-        console.error('❌ Error enviando mensaje privado:', error);
+        console.error('Error enviando mensaje privado:', error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
