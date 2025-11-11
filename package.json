@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node proxy.js",
+    "start": "node proxy/index.js",
     "dev": "node proxy.js",
-    "frontend": "webpack serve --mode development"
+    "frontend": "webpack serve --mode development",
+    "java-client": "java -cp build/classes/java/main Client.Client",
+    "java-server": "java -cp build/classes/java/main Server.Server"
   },
   "dependencies": {
     "cors": "^2.8.5",

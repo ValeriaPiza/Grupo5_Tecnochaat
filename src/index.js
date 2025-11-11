@@ -2,15 +2,15 @@ const PROXY_URL = 'http://localhost:3001';
 
 // Navegación entre secciones
 function showSection(sectionId) {
-    // Ocultar todas las secciones
+    
     document.querySelectorAll('.section').forEach(section => {
         section.classList.remove('active');
     });
-    
-    // Mostrar sección seleccionada
+
+   
     document.getElementById(sectionId).classList.add('active');
+
     
-    // Actualizar botones de navegación
     document.querySelectorAll('.nav button').forEach(button => {
         button.classList.remove('active');
     });
@@ -18,11 +18,11 @@ function showSection(sectionId) {
 }
 
 // Cambiar etiquetas según tipo de mensaje
-document.getElementById('messageType').addEventListener('change', function() {
+document.getElementById('messageType').addEventListener('change', function () {
     const type = this.value;
     const label = document.getElementById('recipientLabel');
     const input = document.getElementById('recipient');
-    
+
     if (type === 'private') {
         label.textContent = 'Para (Usuario):';
         input.placeholder = 'Nombre del usuario';
@@ -37,7 +37,7 @@ function toggleHistoryInput() {
     const type = document.getElementById('historyType').value;
     const label = document.getElementById('historyLabel');
     const input = document.getElementById('historyInput');
-    
+
     if (type === 'private') {
         label.textContent = 'Usuario:';
         input.placeholder = 'Nombre del usuario';
@@ -48,31 +48,31 @@ function toggleHistoryInput() {
 }
 
 // Enviar mensaje
-async function sendMessage() {
+async function sendMessage(e) {
     const type = document.getElementById('messageType').value;
     const recipient = document.getElementById('recipient').value;
     const message = document.getElementById('messageText').value;
     const statusDiv = document.getElementById('chatStatus');
-    
+
     if (!recipient || !message) {
         showStatus('Por favor completa todos los campos', 'error', statusDiv);
         return;
     }
-    
+
     try {
         const endpoint = type === 'private' ? '/api/messages/private' : '/api/messages/group';
-        const body = type === 'private' ? 
-            { to: recipient, message } : 
+        const body = type === 'private' ?
+            { to: recipient, message } :
             { group: recipient, message };
-            
+
         const response = await fetch(PROXY_URL + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showStatus(result.message, 'success', statusDiv);
             document.getElementById('messageText').value = '';
@@ -87,22 +87,29 @@ async function sendMessage() {
 // Crear grupo
 async function createGroup() {
     const groupName = document.getElementById('groupName').value;
+    const groupMembers = document.getElementById('groupMembers').value;
+
     const statusDiv = document.getElementById('groupStatus');
-    
+
     if (!groupName) {
         showStatus('Por favor ingresa un nombre para el grupo', 'error', statusDiv);
         return;
     }
-    
+
+    if (!groupMembers) {
+        showStatus('Por favor ingresa un usarios para el grupo', 'error', statusDiv);
+        return;
+    }
+
     try {
         const response = await fetch(PROXY_URL + '/api/groups', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: groupName })
+            body: JSON.stringify({ name: groupName, members: groupMembers })
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             showStatus(result.message, 'success', statusDiv);
             document.getElementById('groupName').value = '';
@@ -119,19 +126,19 @@ async function loadHistory() {
     const type = document.getElementById('historyType').value;
     const input = document.getElementById('historyInput').value;
     const container = document.getElementById('historyContainer');
-    
+
     if (!input) {
         container.innerHTML = '<div class="status error">Por favor ingresa un nombre</div>';
         return;
     }
-    
+
     try {
         const endpoint = type === 'private' ? '/api/history/private' : '/api/history/group';
         const param = type === 'private' ? 'user' : 'group';
-        
+
         const response = await fetch(`${PROXY_URL}${endpoint}?${param}=${encodeURIComponent(input)}`);
         const result = await response.json();
-        
+
         if (result.success && result.history.length > 0) {
             let html = '<h3>Historial:</h3>';
             result.history.forEach(item => {
@@ -150,18 +157,18 @@ async function loadHistory() {
 // Cargar usuarios conectados
 async function loadOnlineUsers() {
     const container = document.getElementById('usersContainer');
-    
+
     try {
         const response = await fetch(PROXY_URL + '/api/users/online');
         const result = await response.json();
-        
+
         if (result.success && result.users.length > 0) {
             let html = '';
             result.users.forEach(user => {
                 // Limpiar el formato del usuario
                 const cleanUser = user.replace('CLIENTES_CONECTADOS:', '')
-                                    .replace('-', '')
-                                    .trim();
+                    .replace('-', '')
+                    .trim();
                 if (cleanUser && !cleanUser.includes('===')) {
                     html += `<div class="user-card"> ${cleanUser}</div>`;
                 }
@@ -183,29 +190,15 @@ function showStatus(message, type, container) {
     }, 5000);
 }
 // Agregar event listeners para navegación
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.nav button').forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', function () {
             const sectionId = this.getAttribute('data-section');
             showSection(sectionId);
         });
     });
-    
-    // Cargar usuarios automáticamente al abrir la sección
-    document.querySelector('button[data-section="users"]').addEventListener('click', loadOnlineUsers);
 
-     // Agregar esto para el botón de actualizar usuarios
-    const refreshBtn = document.querySelector('button[onclick="loadOnlineUsers()"]');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', loadOnlineUsers);
-    }
-    
-    // También para el botón de cargar historial
-    const historyBtn = document.querySelector('button[onclick="loadHistory()"]');
-    if (historyBtn) {
-        historyBtn.addEventListener('click', loadHistory);
-    }
-    
+
 });
 
 window.loadOnlineUsers = loadOnlineUsers;

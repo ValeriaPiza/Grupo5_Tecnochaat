@@ -22,8 +22,9 @@ public class ClientHandler implements Runnable {
     private DataInputStream dataIn;
     private DataOutputStream dataOut;
 
-    //Mapa para gestionar llamadas grupales activas
-    private static final Map<String, Set<ClientHandler>> llamadasGrupalesActivas = Collections.synchronizedMap(new HashMap<>());
+    // Mapa para gestionar llamadas grupales activas
+    private static final Map<String, Set<ClientHandler>> llamadasGrupalesActivas = Collections
+            .synchronizedMap(new HashMap<>());
 
     public ClientHandler(Socket socket) throws IOException {
         this.clientSocket = socket;
@@ -31,7 +32,7 @@ public class ClientHandler implements Runnable {
         this.out = new PrintWriter(clientSocket.getOutputStream(), true);
         this.dataIn = new DataInputStream(clientSocket.getInputStream());
         this.dataOut = new DataOutputStream(clientSocket.getOutputStream());
-        
+
         // Crear directorio para audios del servidor si no existe
         new File("server_audios").mkdirs();
     }
@@ -52,7 +53,7 @@ public class ClientHandler implements Runnable {
             }
 
             out.println("Hola " + clientName + "! Bienvenido a TecnoChat.");
-        
+
             System.out.println("Cliente '" + clientName + "' conectado desde " + clientSocket.getInetAddress());
 
             // Menú principal
@@ -75,7 +76,8 @@ public class ClientHandler implements Runnable {
 
                 opcion = in.readLine();
 
-                if (opcion == null || opcion.equals("4")) break;
+                if (opcion == null || opcion.equals("4"))
+                    break;
 
                 switch (opcion) {
                     case "1":
@@ -146,7 +148,7 @@ public class ClientHandler implements Runnable {
                         grupo.remove(this);
                     }
                 }
-                // NUEVO: Remover de llamadas grupales activas
+                
                 synchronized (llamadasGrupalesActivas) {
                     for (Set<ClientHandler> llamada : llamadasGrupalesActivas.values()) {
                         llamada.remove(this);
@@ -160,13 +162,13 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Manejar terminacion de llamada
+    
     private void terminarLlamada() throws IOException {
         out.println("Que llamada deseas terminar?");
         out.println("1. Llamada individual");
         out.println("2. Llamada grupal");
         String tipo = in.readLine();
-        
+
         if ("2".equals(tipo)) {
             out.println("CALL_GRUPAL_ENDED");
             System.out.println("Cliente " + clientName + " salio de llamada grupal");
@@ -176,13 +178,13 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Ahora maneja ambos tipos de llamada
+    
     private void manejarLlamada() throws IOException {
         out.println("Que tipo de llamada deseas realizar?");
         out.println("1. Llamada individual (1:1)");
         out.println("2. Llamada grupal (con un grupo)");
         out.print("Elige opcion: ");
-        
+
         String tipoLlamada = in.readLine();
 
         if ("2".equals(tipoLlamada)) {
@@ -192,7 +194,7 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    //  Llamadas grupales - CORREGIDO
+    
     private void manejarLlamadaGrupal() throws IOException {
         if (groups.isEmpty()) {
             out.println("No hay grupos disponibles para llamar.");
@@ -221,9 +223,9 @@ public class ClientHandler implements Runnable {
         }
 
         try {
-            //  Usar puerto base mas alto para evitar conflictos
+            // Usar puerto base mas alto para evitar conflictos
             int puertoBase = 20000 + new Random().nextInt(1000);
-            
+
             System.out.println("INICIANDO LLAMADA GRUPAL:");
             System.out.println("   Creador: " + clientName);
             System.out.println("   Grupo: " + grupoDestino);
@@ -237,31 +239,31 @@ public class ClientHandler implements Runnable {
                 llamadasGrupalesActivas.get(idLlamadaGrupal).add(this);
             }
 
-            //  Configurar puertos correctamente para llamadas grupales
+            // Configuraracion de puertos 
             int puertoEnvioBase = puertoBase;
             int puertoRecepcionBase = puertoBase + 1000;
 
             // Notificar a TODOS los miembros del grupo
             int miembrosNotificados = 0;
             List<String> ipsMiembros = new ArrayList<>();
-            
+
             for (ClientHandler miembro : miembros) {
                 if (!miembro.clientName.equals(this.clientName)) {
                     try {
                         String ipMiembro = miembro.clientSocket.getInetAddress().getHostAddress();
-                        
+
                         miembro.out.println("LLAMADA_GRUPAL_INCOMING");
                         miembro.dataOut.writeUTF(this.clientName); // Creador
-                        miembro.dataOut.writeUTF(grupoDestino);    // Grupo
+                        miembro.dataOut.writeUTF(grupoDestino); // Grupo
                         miembro.dataOut.writeUTF(this.clientSocket.getInetAddress().getHostAddress()); // IP del creador
-                        miembro.dataOut.writeInt(puertoRecepcionBase);  // Puerto para recepcion
-                        miembro.dataOut.writeInt(puertoEnvioBase);      // Puerto para envio
+                        miembro.dataOut.writeInt(puertoRecepcionBase); // Puerto para recepcion
+                        miembro.dataOut.writeInt(puertoEnvioBase); // Puerto para envio
                         miembro.dataOut.writeUTF(idLlamadaGrupal); // ID de llamada
                         miembro.dataOut.flush();
                         miembrosNotificados++;
-                        
+
                         ipsMiembros.add(ipMiembro);
-                        
+
                     } catch (Exception e) {
                         System.err.println("Error notificando a " + miembro.clientName + ": " + e.getMessage());
                     }
@@ -275,7 +277,7 @@ public class ClientHandler implements Runnable {
             out.println("PUERTO_ENVIO:" + puertoEnvioBase);
             out.println("MIEMBROS_INVITADOS:" + miembrosNotificados);
             out.println("ID_LLAMADA:" + idLlamadaGrupal);
-            
+
             // Enviar lista de IPs de miembros
             for (String ip : ipsMiembros) {
                 out.println("IP_MIEMBRO:" + ip);
@@ -297,7 +299,7 @@ public class ClientHandler implements Runnable {
         System.out.println("Usuario " + clientName + " se unio a llamada grupal activa");
     }
 
-    //  Llamadas individuales - CORREGIDO
+    
     private void manejarLlamadaIndividual() throws IOException {
         List<String> disponibles = new ArrayList<>();
         synchronized (users) {
@@ -329,24 +331,25 @@ public class ClientHandler implements Runnable {
         ClientHandler receptor = users.get(destinatario);
 
         try {
-            // Usar la IP CORRECTA del receptor
+            
             String ipReceptor = receptor.clientSocket.getInetAddress().getHostAddress();
             String ipLlamante = this.clientSocket.getInetAddress().getHostAddress();
+
             
-            // Verificar conectividad basica
             if (ipReceptor.equals("127.0.0.1") || ipReceptor.equals("localhost")) {
                 if (!ipLlamante.equals("127.0.0.1") && !ipLlamante.equals("localhost")) {
                     out.println("El usuario esta en localhost pero tu estas en red externa.");
-                    out.println("El usuario debe conectarse desde fuera de localhost para llamadas entre computadores.");
+                    out.println(
+                            "El usuario debe conectarse desde fuera de localhost para llamadas entre computadores.");
                     return;
                 }
             }
-            
+
             // Usar puertos distintos y bien separados
             int puertoBase = 18000 + new Random().nextInt(1000);
             int puertoEnvio = puertoBase;
             int puertoRecepcion = puertoBase + 100;
-            
+
             System.out.println("Configurando llamada individual:");
             System.out.println("   De: " + clientName + " (" + ipLlamante + ")");
             System.out.println("   Para: " + destinatario + " (" + ipReceptor + ")");
@@ -363,7 +366,7 @@ public class ClientHandler implements Runnable {
             receptor.dataOut.writeUTF(this.clientName);
             receptor.dataOut.writeUTF(ipLlamante); // IP del llamante
             receptor.dataOut.writeInt(puertoRecepcion); // Puerto donde recibir
-            receptor.dataOut.writeInt(puertoEnvio);     // Puerto donde enviar
+            receptor.dataOut.writeInt(puertoEnvio); // Puerto donde enviar
             receptor.dataOut.flush();
 
             System.out.println("Llamada individual configurada: " + clientName + " -> " + destinatario);
@@ -371,7 +374,8 @@ public class ClientHandler implements Runnable {
 
         } catch (Exception e) {
             out.println("Error al iniciar la llamada individual: " + e.getMessage());
-            System.err.println("Error en llamada individual de " + clientName + " a " + destinatario + ": " + e.getMessage());
+            System.err.println(
+                    "Error en llamada individual de " + clientName + " a " + destinatario + ": " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -379,7 +383,7 @@ public class ClientHandler implements Runnable {
     // Metodo para listar clientes conectados
     private void listarClientesConectados() {
         StringBuilder listaClientes = new StringBuilder();
-        
+
         synchronized (users) {
             for (String nombre : users.keySet()) {
                 if (!nombre.equals(this.clientName)) {
@@ -390,7 +394,7 @@ public class ClientHandler implements Runnable {
                 }
             }
         }
-        
+
         if (listaClientes.length() == 0) {
             out.println("CLIENTES_CONECTADOS:No hay otros clientes conectados.");
         } else {
@@ -429,9 +433,9 @@ public class ClientHandler implements Runnable {
         }
         if (receptor != null && !destino.equals(clientName)) {
             receptor.out.println("Mensaje privado de " + clientName + ": " + mensaje);
-            
+
             MessageHistory.savePrivateMessage(clientName, destino, mensaje);
-            
+
             out.println("Mensaje enviado correctamente.");
         } else {
             out.println("Usuario no encontrado o invalido.");
@@ -460,7 +464,8 @@ public class ClientHandler implements Runnable {
 
         out.println("Escribe los nombres de los usuarios a agregar, separados por comas:");
         String linea = in.readLine();
-        if (linea == null || linea.trim().isEmpty()) return;
+        if (linea == null || linea.trim().isEmpty())
+            return;
 
         String[] nombres = linea.split(",");
 
@@ -518,17 +523,34 @@ public class ClientHandler implements Runnable {
         out.println("Escribe tu mensaje para el grupo:");
         String mensaje = in.readLine();
 
+        
+        int mensajesEnviados = 0;
         synchronized (groups) {
-            for (ClientHandler miembro : groups.get(grupo)) {
-                if (!miembro.clientName.equals(this.clientName)) {
+            Set<ClientHandler> miembros = groups.get(grupo);
+
+            // Verificar que el grupo tenga miembros
+            if (miembros == null || miembros.isEmpty()) {
+                out.println("El grupo no tiene miembros.");
+                return;
+            }
+
+            // Enviar a TODOS los miembros
+            for (ClientHandler miembro : miembros) {
+                try {
                     miembro.out.println("[" + grupo + "] " + clientName + ": " + mensaje);
+                    miembro.out.flush(); //  Asegurar que se envíe inmediatamente
+                    mensajesEnviados++;
+                } catch (Exception e) {
+                    System.err.println("Error enviando mensaje a " + miembro.clientName + ": " + e.getMessage());
                 }
             }
         }
-        
+
         MessageHistory.saveGroupMessage(clientName, grupo, mensaje);
-        
-        out.println("Mensaje enviado al grupo correctamente.");
+
+        out.println("Mensaje enviado al grupo correctamente. (" + mensajesEnviados + " miembros)");
+        System.out.println(" Mensaje grupal de " + clientName + " al grupo '" + grupo + "' (" + mensajesEnviados
+                + " receptores)");
     }
 
     // Notas de voz privadas
@@ -572,14 +594,14 @@ public class ClientHandler implements Runnable {
         try {
             out.println("LISTO_PARA_AUDIO");
             File audioRecibido = recibirArchivoAudio();
-            
+
             if (audioRecibido == null || audioRecibido.length() == 0) {
                 out.println("Error: Audio no recibido correctamente.");
                 return;
             }
 
             boolean enviado = enviarAudioACliente(receptor, audioRecibido, this.clientName);
-            
+
             if (enviado) {
                 MessageHistory.savePrivateAudio(this.clientName, destino, audioRecibido);
                 out.println("Nota de voz enviada correctamente a " + destino);
@@ -629,7 +651,7 @@ public class ClientHandler implements Runnable {
         try {
             out.println("LISTO_PARA_AUDIO");
             File audioRecibido = recibirArchivoAudio();
-            
+
             if (audioRecibido == null || audioRecibido.length() == 0) {
                 out.println("Error: Audio no recibido correctamente.");
                 return;
@@ -637,12 +659,13 @@ public class ClientHandler implements Runnable {
 
             System.out.println("Audio grupal recibido de " + clientName + " para grupo " + nombreGrupo);
 
-            File audioGrupal = new File(audioRecibido.getParent(), "group_" + nombreGrupo + "_" + audioRecibido.getName());
+            File audioGrupal = new File(audioRecibido.getParent(),
+                    "group_" + nombreGrupo + "_" + audioRecibido.getName());
             audioRecibido.renameTo(audioGrupal);
-            
+
             if (!audioGrupal.exists()) {
                 try (FileInputStream fis = new FileInputStream(audioRecibido);
-                    FileOutputStream fos = new FileOutputStream(audioGrupal)) {
+                        FileOutputStream fos = new FileOutputStream(audioGrupal)) {
                     byte[] buffer = new byte[4096];
                     int bytesRead;
                     while ((bytesRead = fis.read(buffer)) != -1) {
@@ -654,7 +677,7 @@ public class ClientHandler implements Runnable {
             // Enviar a TODOS los miembros incluyendo al emisor
             int exitosos = 0;
             int totalMiembros = 0;
-            
+
             synchronized (groups) {
                 for (ClientHandler miembro : miembros) {
                     totalMiembros++;
@@ -669,10 +692,10 @@ public class ClientHandler implements Runnable {
 
             if (exitosos > 0) {
                 MessageHistory.saveGroupAudio(this.clientName, nombreGrupo, audioGrupal);
-                out.println("Nota de voz enviada al grupo " + nombreGrupo + 
+                out.println("Nota de voz enviada al grupo " + nombreGrupo +
                         " (" + exitosos + "/" + totalMiembros + " miembros)");
-                System.out.println("Audio grupal enviado de " + clientName + 
-                                " al grupo " + nombreGrupo + " (" + exitosos + "/" + totalMiembros + " receptores)");
+                System.out.println("Audio grupal enviado de " + clientName +
+                        " al grupo " + nombreGrupo + " (" + exitosos + "/" + totalMiembros + " receptores)");
             } else {
                 out.println("No se pudo enviar la nota de voz a ningun miembro del grupo.");
             }
@@ -688,7 +711,8 @@ public class ClientHandler implements Runnable {
             String nombreArchivo = dataIn.readUTF();
             long tamanoArchivo = dataIn.readLong();
 
-            System.out.println("Recibiendo audio: " + nombreArchivo + " (" + tamanoArchivo + " bytes) de " + clientName);
+            System.out
+                    .println("Recibiendo audio: " + nombreArchivo + " (" + tamanoArchivo + " bytes) de " + clientName);
 
             if (tamanoArchivo <= 0 || tamanoArchivo > 10000000) {
                 throw new IOException("Tamano de archivo invalido: " + tamanoArchivo);
@@ -703,7 +727,7 @@ public class ClientHandler implements Runnable {
             File archivoAudio = new File(carpetaAudios, nombreUnico);
 
             try (FileOutputStream fos = new FileOutputStream(archivoAudio);
-                BufferedOutputStream bos = new BufferedOutputStream(fos)) {
+                    BufferedOutputStream bos = new BufferedOutputStream(fos)) {
 
                 byte[] buffer = new byte[4096];
                 long bytesRecibidos = 0;
@@ -722,7 +746,8 @@ public class ClientHandler implements Runnable {
                 bos.flush();
             }
 
-            System.out.println("Audio recibido y guardado: " + archivoAudio.getPath() + " (" + archivoAudio.length() + " bytes)");
+            System.out.println(
+                    "Audio recibido y guardado: " + archivoAudio.getPath() + " (" + archivoAudio.length() + " bytes)");
             return archivoAudio;
 
         } catch (IOException e) {
@@ -743,28 +768,30 @@ public class ClientHandler implements Runnable {
             Thread.sleep(50);
 
             boolean esGrupo = audioFile.getName().contains("group_") || emisor.contains("[GRUPO");
-            
+
             cliente.dataOut.writeUTF(emisor);
             cliente.dataOut.writeUTF(audioFile.getName());
             cliente.dataOut.writeLong(audioFile.length());
 
             try (FileInputStream fis = new FileInputStream(audioFile);
-                BufferedInputStream bis = new BufferedInputStream(fis)) {
-                
+                    BufferedInputStream bis = new BufferedInputStream(fis)) {
+
                 byte[] buffer = new byte[4096];
                 int bytesLeidos;
                 long totalEnviado = 0;
-                
+
                 while ((bytesLeidos = bis.read(buffer)) > 0) {
                     cliente.dataOut.write(buffer, 0, bytesLeidos);
                     totalEnviado += bytesLeidos;
                 }
                 cliente.dataOut.flush();
-                
+
                 if (esGrupo) {
-                    System.out.println("Audio grupal enviado a " + cliente.clientName + ": " + audioFile.getName() + " (" + totalEnviado + " bytes)");
+                    System.out.println("Audio grupal enviado a " + cliente.clientName + ": " + audioFile.getName()
+                            + " (" + totalEnviado + " bytes)");
                 } else {
-                    System.out.println("Audio privado enviado a " + cliente.clientName + ": " + audioFile.getName() + " (" + totalEnviado + " bytes)");
+                    System.out.println("Audio privado enviado a " + cliente.clientName + ": " + audioFile.getName()
+                            + " (" + totalEnviado + " bytes)");
                 }
             }
 
@@ -800,7 +827,7 @@ public class ClientHandler implements Runnable {
         String usuario = in.readLine();
 
         List<String> historial = MessageHistory.getPrivateHistory(clientName, usuario);
-        
+
         if (historial.isEmpty()) {
             out.println("No hay historial con " + usuario);
         } else {
@@ -829,7 +856,7 @@ public class ClientHandler implements Runnable {
         String grupo = in.readLine();
 
         List<String> historial = MessageHistory.getGroupHistory(grupo);
-        
+
         if (historial.isEmpty()) {
             out.println("No hay historial para el grupo " + grupo);
         } else {
