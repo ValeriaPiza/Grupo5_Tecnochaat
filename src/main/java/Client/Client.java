@@ -104,7 +104,7 @@ public class Client {
         }
     }
 
-    // CORRECCION: Llamada entrante individual
+    // Llamada entrante individual
     private static void manejarLlamadaEntrante(DataInputStream dataIn, PrintWriter out) {
         try {
             String emisor = dataIn.readUTF();
@@ -160,7 +160,7 @@ public class Client {
         }
     }
 
-    // CORRECCION: Llamada grupal entrante
+    // Llamada grupal entrante
     private static void manejarLlamadaGrupalEntrante(DataInputStream dataIn, PrintWriter out) {
         try {
             String emisor = dataIn.readUTF();
@@ -204,7 +204,7 @@ public class Client {
         }
     }
 
-    // CORRECCION: Configuracion de llamada individual
+    // Configuracion de llamada individual
     private static void manejarConfiguracionLlamada(String lineaRecibida, BufferedReader in) {
         try {
             String ip = lineaRecibida.split(":")[1];
@@ -402,7 +402,7 @@ public class Client {
         System.out.println("===========================\n");
     }
 
-    // CORRECCION: Recibir y reproducir audio
+    // Recibir y reproducir audio
     private static void recibirYReproducirAudio(DataInputStream dataIn) {
         try {
             String emisor = dataIn.readUTF();
@@ -445,7 +445,7 @@ public class Client {
 
             System.out.println("Audio guardado: " + nombreUnico);
 
-            // CORRECCION: Reproduccion automatica para audios grupales
+            // Reproduccion automatica para audios grupales
             if (esAudioGrupal) {
                 System.out.println("Reproduciendo audio grupal automaticamente...");
                 new Thread(() -> {
