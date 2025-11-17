@@ -6,7 +6,7 @@ import java.net.DatagramSocket;
 import java.net.SocketException;
 
 public class AudioCallReceiver {
-    private static volatile boolean recibiendo = true;
+    private static volatile boolean recibiendo = false;
     private static DatagramSocket socket = null;
     private static SourceDataLine altavoz = null;
     
@@ -14,219 +14,236 @@ public class AudioCallReceiver {
     private static long bytesRecibidos = 0;
     private static long inicioRecepcion = 0;
     
-    private static final int BUFFER_SIZE = 1024;
-    private static final int SAMPLE_RATE = 16000;
+    private static final int BUFFER_SIZE = 512;
+    private static final int SAMPLE_RATE = 8000;
     private static final int SAMPLE_SIZE = 16;
     private static final int CHANNELS = 1;
+    private static final boolean SIGNED = true;
+    private static final boolean BIG_ENDIAN = false;
     
     private static String tipoLlamada = "INDIVIDUAL";
     private static String idLlamada = "";
     private static int puertoEscucha = 0;
 
-    public static void iniciarRecepcion(int puertoEscucha) {
-        AudioCallReceiver.puertoEscucha = puertoEscucha;
+    public static void iniciarRecepcionIndividual(int puertoEscucha) {
+        System.out.println("Iniciando receptor individual en puerto: " + puertoEscucha);
         iniciarRecepcion(puertoEscucha, "INDIVIDUAL", "");
     }
 
-    public static void iniciarRecepcion(int puertoEscucha, String tipo, String idLlamada) {
+    public static void iniciarRecepcionGrupal(int puertoEscucha, String idLlamadaGrupal) {
+        System.out.println("Iniciando receptor grupal en puerto: " + puertoEscucha);
+        iniciarRecepcion(puertoEscucha, "GRUPAL", idLlamadaGrupal);
+    }
+
+    public static void iniciarRecepcion(int puertoEscucha, String tipo, String idLlamadaEspecifica) {
+        if (recibiendo) {
+            System.out.println("Deteniendo recepción anterior...");
+            terminarRecepcion();
+            try { Thread.sleep(1000); } catch (InterruptedException e) {}
+        }
+
         AudioCallReceiver.tipoLlamada = tipo;
-        AudioCallReceiver.idLlamada = idLlamada;
+        AudioCallReceiver.idLlamada = idLlamadaEspecifica;
         AudioCallReceiver.puertoEscucha = puertoEscucha;
         
         recibiendo = true;
         socket = null;
         altavoz = null;
-
-        System.out.println((tipo.equals("GRUPAL") ? "LLAMADA GRUPAL" : "LLAMADA INDIVIDUAL") + " - INICIANDO RECEPCIÓN");
-        System.out.println("Puerto de escucha: " + puertoEscucha);
-        if (tipo.equals("GRUPAL")) {
-            System.out.println("ID Llamada: " + idLlamada);
-        }
+        paquetesRecibidos = 0;
+        bytesRecibidos = 0;
+        inicioRecepcion = 0;
 
         Thread receiverThread = new Thread(() -> {
-            try {
-                AudioFormat formato = getBestAudioFormat();
-                DataLine.Info info = new DataLine.Info(SourceDataLine.class, formato);
-
-                if (!AudioSystem.isLineSupported(info)) {
-                    System.out.println("Formato de audio no soportado. Probando alternativas...");
-                    formato = getFallbackAudioFormat();
-                    info = new DataLine.Info(SourceDataLine.class, formato);
-                }
-
-                altavoz = (SourceDataLine) AudioSystem.getLine(info);
-                altavoz.open(formato);
-                altavoz.start();
-
-                System.out.println("Altavoz configurado:");
-                System.out.println("   Sample Rate: " + formato.getSampleRate() + " Hz");
-                System.out.println("   Sample Size: " + formato.getSampleSizeInBits() + " bits");
-                System.out.println("   Canales: " + formato.getChannels());
-                System.out.println("   Buffer: " + BUFFER_SIZE + " bytes");
-
-                socket = new DatagramSocket(puertoEscucha);
-                socket.setSoTimeout(5000);
-
-                byte[] buffer = new byte[BUFFER_SIZE];
-                inicioRecepcion = System.currentTimeMillis();
-
-                System.out.println("Escuchando audio entrante en puerto " + puertoEscucha + "...");
-                System.out.println("Escribe '10' en el menú principal para terminar la llamada");
-
-                Thread statsThread = new Thread(() -> {
-                    while (recibiendo) {
-                        try {
-                            Thread.sleep(10000);
-                            mostrarEstadisticas();
-                        } catch (InterruptedException e) {
-                            break;
-                        }
-                    }
-                });
-                statsThread.setDaemon(true);
-                statsThread.start();
-
-                while (recibiendo) {
-                    try {
-                        DatagramPacket paquete = new DatagramPacket(buffer, buffer.length);
-                        socket.receive(paquete);
-                        
-                        if (paquete.getLength() > 0) {
-                            if (esAudioValido(paquete.getData(), paquete.getLength())) {
-                                altavoz.write(paquete.getData(), 0, paquete.getLength());
-                                paquetesRecibidos++;
-                                bytesRecibidos += paquete.getLength();
-                            } else {
-                                System.err.println("Paquete de audio inválido recibido");
-                            }
-                        }
-                        
-                    } catch (java.net.SocketTimeoutException e) {
-                        if (recibiendo) {
-                            System.out.println("Timeout de recepción, continuando escucha...");
-                        }
-                    } catch (Exception e) {
-                        if (recibiendo) {
-                            System.err.println("Error en recepción de audio: " + e.getMessage());
-                            Thread.sleep(100);
-                        }
-                    }
-                }
-
-            } catch (LineUnavailableException e) {
-                System.err.println("Línea de audio no disponible: " + e.getMessage());
-                System.err.println("Verifica que los altavoces estén conectados y no estén siendo usados por otra aplicación");
-            } catch (SocketException e) {
-                if (recibiendo) {
-                    System.err.println("Error de socket: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                System.err.println("ERROR en AudioCallReceiver: " + e.getMessage());
-                e.printStackTrace();
-            } finally {
-                cerrarRecursos();
-                mostrarEstadisticasFinales();
-            }
+            ejecutarRecepcionAudio();
         });
         
         receiverThread.setName("AudioReceiver-" + puertoEscucha);
         receiverThread.start();
     }
 
-    private static AudioFormat getBestAudioFormat() {
+    private static void ejecutarRecepcionAudio() {
         try {
-            return new AudioFormat(SAMPLE_RATE, SAMPLE_SIZE, CHANNELS, true, false);
-        } catch (Exception e) {
-            return getFallbackAudioFormat();
-        }
-    }
+            AudioFormat formato = new AudioFormat(
+                AudioFormat.Encoding.PCM_SIGNED,
+                SAMPLE_RATE,
+                SAMPLE_SIZE,
+                CHANNELS,
+                (SAMPLE_SIZE / 8) * CHANNELS,
+                SAMPLE_RATE,
+                BIG_ENDIAN
+            );
 
-    private static AudioFormat getFallbackAudioFormat() {
-        System.out.println("Usando formato de audio alternativo...");
-        return new AudioFormat(8000.0f, 16, 1, true, false);
-    }
+            System.out.println("Configurando audio - Formato: " + 
+                formato.getSampleRate() + "Hz, " + formato.getSampleSizeInBits() + "bits");
 
-    private static boolean esAudioValido(byte[] audioData, int length) {
-        if (length <= 0 || length > BUFFER_SIZE) {
-            return false;
-        }
-        boolean esMayormenteSilencio = true;
-        for (int i = 0; i < Math.min(length, 100); i++) {
-            if (Math.abs(audioData[i]) > 10) {
-                esMayormenteSilencio = false;
-                break;
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, formato);
+
+            if (!AudioSystem.isLineSupported(info)) {
+                System.out.println("Formato principal no soportado, probando alternativos...");
+                
+                AudioFormat[] formatosAlternativos = {
+                    new AudioFormat(8000.0f, 16, 1, true, false),
+                    new AudioFormat(16000.0f, 16, 1, true, false),
+                    new AudioFormat(44100.0f, 16, 1, true, false),
+                    new AudioFormat(8000.0f, 8, 1, true, false)
+                };
+                
+                for (AudioFormat formatoAlt : formatosAlternativos) {
+                    info = new DataLine.Info(SourceDataLine.class, formatoAlt);
+                    if (AudioSystem.isLineSupported(info)) {
+                        formato = formatoAlt;
+                        System.out.println("Formato alternativo seleccionado: " + 
+                            formato.getSampleRate() + "Hz");
+                        break;
+                    }
+                }
             }
-        }
-        return !esMayormenteSilencio;
-    }
 
-    private static void mostrarEstadisticas() {
-        if (paquetesRecibidos == 0) return;
-        
-        long tiempoTranscurrido = (System.currentTimeMillis() - inicioRecepcion) / 1000;
-        if (tiempoTranscurrido == 0) return;
-        
-        long paquetesPorSegundo = paquetesRecibidos / tiempoTranscurrido;
-        long kbps = (bytesRecibidos * 8) / (tiempoTranscurrido * 1024);
-        
-        System.out.println("\nESTADÍSTICAS DE RECEPCIÓN:");
-        System.out.println("   Tipo: " + tipoLlamada);
-        System.out.println("   Tiempo: " + tiempoTranscurrido + " segundos");
-        System.out.println("   Paquetes: " + paquetesRecibidos + " (" + paquetesPorSegundo + "/s)");
-        System.out.println("   Datos: " + (bytesRecibidos / 1024) + " KB (" + kbps + " kbps)");
-        System.out.println("   Puerto: " + puertoEscucha);
-    }
+            altavoz = (SourceDataLine) AudioSystem.getLine(info);
+            
+            int bufferSize = Math.max(BUFFER_SIZE * 4, altavoz.getBufferSize());
+            altavoz.open(formato, bufferSize);
+            altavoz.start();
 
-    private static void mostrarEstadisticasFinales() {
-        long tiempoTotal = (System.currentTimeMillis() - inicioRecepcion) / 1000;
-        if (tiempoTotal == 0) tiempoTotal = 1;
-        
-        System.out.println("\nESTADÍSTICAS FINALES DE LLAMADA:");
-        System.out.println("   Tipo: " + tipoLlamada);
-        System.out.println("   Duración total: " + tiempoTotal + " segundos");
-        System.out.println("   Paquetes recibidos: " + paquetesRecibidos);
-        System.out.println("   Datos recibidos: " + (bytesRecibidos / 1024) + " KB");
-        System.out.println("   Promedio: " + (paquetesRecibidos / tiempoTotal) + " paquetes/segundo");
-        
-        if (tipoLlamada.equals("GRUPAL")) {
-            System.out.println("   Llamada grupal finalizada");
-        } else {
-            System.out.println("   Llamada individual finalizada");
+            System.out.println("Altavoz configurado - Buffer: " + bufferSize + " bytes");
+
+            System.out.println("🔌 Iniciando socket en puerto: " + puertoEscucha);
+            socket = new DatagramSocket(puertoEscucha);
+            socket.setSoTimeout(3000); 
+            socket.setReceiveBufferSize(65536); 
+
+            byte[] buffer = new byte[BUFFER_SIZE];
+            inicioRecepcion = System.currentTimeMillis();
+
+            System.out.println("ESCUCHANDO en puerto " + puertoEscucha);
+            System.out.println("Escribe '10' para terminar la llamada");
+
+            int timeoutConsecutivos = 0;
+            final int MAX_TIMEOUTS = 5;
+
+            while (recibiendo) {
+                try {
+                    DatagramPacket paquete = new DatagramPacket(buffer, buffer.length);
+                    socket.receive(paquete);
+                    
+                    timeoutConsecutivos = 0; 
+                    
+                    if (paquete.getLength() > 0) {
+                        byte[] audioData = paquete.getData();
+                        int audioLength = paquete.getLength();
+                        int bytesEscritos = altavoz.write(audioData, 0, audioLength);
+                        
+                        if (bytesEscritos > 0) {
+                            paquetesRecibidos++;
+                            bytesRecibidos += audioLength;
+                            
+                            if (paquetesRecibidos == 1) {
+                                System.out.println("PRIMER PAQUETE RECIBIDO Y REPRODUCIDO! - " + 
+                                    audioLength + " bytes desde " + paquete.getAddress());
+                            }
+                            
+                            if (paquetesRecibidos % 100 == 0) {
+                                long tiempo = (System.currentTimeMillis() - inicioRecepcion) / 1000;
+                                System.out.printf("Recibidos: %d paquetes (%d segundos)\r", 
+                                    paquetesRecibidos, tiempo);
+                            }
+                        } else {
+                            System.err.println("Error: No se pudieron escribir " + audioLength + " bytes al altavoz");
+                        }
+                    }
+                    
+                } catch (java.net.SocketTimeoutException e) {
+                    timeoutConsecutivos++;
+                    if (timeoutConsecutivos <= MAX_TIMEOUTS) {
+                        if (timeoutConsecutivos % 3 == 0) {
+                            System.out.printf("Esperando audio... (%d/%d timeouts)\r", 
+                                timeoutConsecutivos, MAX_TIMEOUTS);
+                        }
+                    } else {
+                        System.out.println("Sin audio recibido recientemente...");
+                        timeoutConsecutivos = MAX_TIMEOUTS; 
+                    }
+                    continue;
+                } catch (Exception e) {
+                    if (recibiendo) {
+                        System.err.println("Error en recepción: " + e.getMessage());
+                        try { Thread.sleep(100); } catch (InterruptedException ie) {}
+                    }
+                }
+            }
+
+        } catch (LineUnavailableException e) {
+            System.err.println("Línea de audio no disponible: " + e.getMessage());
+            System.err.println("Solución: Verifica que los altavoces no estén siendo usados por otra aplicación");
+        } catch (SocketException e) {
+            if (recibiendo) {
+                System.err.println("Error de socket: " + e.getMessage());
+            }
+        } catch (Exception e) {
+            System.err.println("ERROR crítico en AudioCallReceiver: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            System.out.println("Finalizando recepción de audio...");
+            cerrarRecursos();
+            mostrarEstadisticasFinales();
         }
     }
 
     private static void cerrarRecursos() {
-        try {
-            if (altavoz != null) {
-                System.out.println("Cerrando altavoz...");
+        recibiendo = false;
+        
+        if (altavoz != null) {
+            try {
                 altavoz.stop();
+                altavoz.flush();
                 altavoz.close();
-                altavoz = null;
+                System.out.println("Altavoz cerrado correctamente");
+            } catch (Exception e) {
+                System.err.println("Error cerrando altavoz: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("Error cerrando altavoz: " + e.getMessage());
+            altavoz = null;
         }
 
-        try {
-            if (socket != null && !socket.isClosed()) {
-                System.out.println("Cerrando socket de recepción...");
+        if (socket != null && !socket.isClosed()) {
+            try {
                 socket.close();
-                socket = null;
+                System.out.println("Socket de recepción cerrado");
+            } catch (Exception e) {
+                System.err.println("Error cerrando socket: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("Error cerrando socket: " + e.getMessage());
+            socket = null;
+        }
+    }
+
+    private static void mostrarEstadisticasFinales() {
+        if (inicioRecepcion == 0) {
+            System.out.println("No se inició recepción de audio");
+            return;
+        }
+        
+        long tiempoTotal = (System.currentTimeMillis() - inicioRecepcion) / 1000;
+        if (tiempoTotal == 0) tiempoTotal = 1;
+        
+        System.out.println("\nESTADÍSTICAS FINALES DE RECEPCIÓN:");
+        System.out.println("   Tipo: " + tipoLlamada);
+        System.out.println("   Duración: " + tiempoTotal + " segundos");
+        System.out.println("   Paquetes recibidos: " + paquetesRecibidos);
+        System.out.println("   Datos recibidos: " + (bytesRecibidos / 1024) + " KB");
+        System.out.println("   Promedio: " + (paquetesRecibidos / tiempoTotal) + " paquetes/segundo");
+        System.out.println("   Estado: " + (paquetesRecibidos > 0 ? "ÉXITO" : "SIN DATOS"));
+        
+        if (paquetesRecibidos == 0) {
+            System.out.println("   Posibles causas:");
+            System.out.println("      - Firewall bloqueando puerto " + puertoEscucha);
+            System.out.println("      - Problemas de red entre dispositivos");
+            System.out.println("      - Formato de audio incompatible");
         }
     }
 
     public static void terminarRecepcion() {
         System.out.println("Solicitando terminación de recepción...");
         recibiendo = false;
-        
-        if (socket != null && !socket.isClosed()) {
-            try {
-                socket.close();
-            } catch (Exception e) {}
-        }
+        cerrarRecursos();
     }
 
     public static boolean isRecibiendo() {
@@ -234,25 +251,35 @@ public class AudioCallReceiver {
     }
 
     public static String getEstadisticas() {
-        long tiempoTranscurrido = (System.currentTimeMillis() - inicioRecepcion) / 1000;
-        if (tiempoTranscurrido == 0) tiempoTranscurrido = 1;
+        if (inicioRecepcion == 0) return "Recepción no iniciada";
         
-        return String.format(
-            "Llamada %s - %d segundos - %d paquetes - %d KB",
-            tipoLlamada,
-            tiempoTranscurrido,
-            paquetesRecibidos,
-            bytesRecibidos / 1024
-        );
+        long tiempo = (System.currentTimeMillis() - inicioRecepcion) / 1000;
+        return String.format("Recepción: %d paquetes en %d segundos", paquetesRecibidos, tiempo);
     }
 
-    public static String getInfoLlamada() {
-        return String.format(
-            "Tipo: %s | Puerto: %d | ID: %s | Activa: %s",
-            tipoLlamada,
-            puertoEscucha,
-            idLlamada.isEmpty() ? "N/A" : idLlamada,
-            recibiendo ? "Sí" : "No"
-        );
+    public static void diagnosticoAudio() {
+        System.out.println("\nDIAGNÓSTICO DEL SISTEMA DE AUDIO:");
+        
+        // Verificar formatos soportados
+        AudioFormat[] formatosTest = {
+            new AudioFormat(8000.0f, 16, 1, true, false),
+            new AudioFormat(16000.0f, 16, 1, true, false),
+            new AudioFormat(44100.0f, 16, 1, true, false)
+        };
+        
+        for (AudioFormat formato : formatosTest) {
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, formato);
+            boolean soportado = AudioSystem.isLineSupported(info);
+            System.out.printf("   %5.1f kHz, %2d bits: %s%n",
+                formato.getSampleRate() / 1000.0,
+                formato.getSampleSizeInBits(),
+                soportado ? "SOPORTADO" : "NO SOPORTADO");
+        }
+      
+        Mixer.Info[] mixers = AudioSystem.getMixerInfo();
+        System.out.println("   Mixers disponibles: " + mixers.length);
+        for (Mixer.Info mixer : mixers) {
+            System.out.println("      - " + mixer.getName());
+        }
     }
 }

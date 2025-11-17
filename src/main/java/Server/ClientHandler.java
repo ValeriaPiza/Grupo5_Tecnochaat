@@ -13,16 +13,13 @@ public class ClientHandler implements Runnable {
     private BufferedReader in;
     private PrintWriter out;
 
-    // Usuarios conectados: nombre -> ClientHandler
     private static final Map<String, ClientHandler> users = Collections.synchronizedMap(new HashMap<>());
 
-    // Grupos: nombre grupo -> conjunto de ClientHandler miembros
     private static final Map<String, Set<ClientHandler>> groups = Collections.synchronizedMap(new HashMap<>());
 
     private DataInputStream dataIn;
     private DataOutputStream dataOut;
 
-    // Mapa para gestionar llamadas grupales activas
     private static final Map<String, Set<ClientHandler>> llamadasGrupalesActivas = Collections
             .synchronizedMap(new HashMap<>());
 
@@ -33,7 +30,6 @@ public class ClientHandler implements Runnable {
         this.dataIn = new DataInputStream(clientSocket.getInputStream());
         this.dataOut = new DataOutputStream(clientSocket.getOutputStream());
 
-        // Crear directorio para audios del servidor si no existe
         new File("server_audios").mkdirs();
     }
 
@@ -139,7 +135,6 @@ public class ClientHandler implements Runnable {
             System.out.println("Error con el cliente " + clientName + ": " + e.getMessage());
         } finally {
             try {
-                // Si se desconecta el cliente, eliminar usuario y eliminarlo de grupos
                 synchronized (users) {
                     users.remove(clientName);
                 }
@@ -181,7 +176,7 @@ public class ClientHandler implements Runnable {
     
     private void manejarLlamada() throws IOException {
         out.println("Que tipo de llamada deseas realizar?");
-        out.println("1. Llamada individual (1:1)");
+        out.println("1. Llamada individual");
         out.println("2. Llamada grupal (con un grupo)");
         out.print("Elige opcion: ");
 
@@ -223,78 +218,104 @@ public class ClientHandler implements Runnable {
         }
 
         try {
-            // Usar puerto base mas alto para evitar conflictos
-            int puertoBase = 20000 + new Random().nextInt(1000);
+            int puertoBase = 60000 + new Random().nextInt(5000);
+            String idLlamadaGrupal = grupoDestino + "_" + System.currentTimeMillis();
 
-            System.out.println("INICIANDO LLAMADA GRUPAL:");
+            System.out.println(" INICIANDO LLAMADA GRUPAL CORREGIDA:");
             System.out.println("   Creador: " + clientName);
             System.out.println("   Grupo: " + grupoDestino);
             System.out.println("   Miembros totales: " + miembros.size());
-            System.out.println("   Puerto base: " + puertoBase);
 
-            // Registrar llamada grupal activa
-            String idLlamadaGrupal = grupoDestino + "_" + System.currentTimeMillis();
-            synchronized (llamadasGrupalesActivas) {
-                llamadasGrupalesActivas.put(idLlamadaGrupal, Collections.synchronizedSet(new HashSet<>()));
-                llamadasGrupalesActivas.get(idLlamadaGrupal).add(this);
+            int puertoRecepcionCreador = puertoBase;           
+            int puertoRecepcionMiembros = puertoBase + 1000;   
+
+            System.out.println("CONFIGURACIÓN SIMÉTRICA:");
+            System.out.println("   Creador:");
+            System.out.println("     - Escucha en: " + puertoRecepcionCreador + " (miembros ENVÍAN aquí)");
+            System.out.println("     - Envía a: " + puertoRecepcionMiembros + " (miembros ESCUCHAN aquí)");
+            System.out.println("   Miembros:");
+            System.out.println("     - Escuchan en: " + puertoRecepcionMiembros + " (creador ENVÍA aquí)");
+            System.out.println("     - Envían a: " + puertoRecepcionCreador + " (creador ESCUCHA aquí)");
+
+            String ipCreador = this.clientSocket.getInetAddress().getHostAddress();
+            
+            if (ipCreador.equals("127.0.0.1") || ipCreador.equals("localhost")) {
+                try {
+                    Socket testSocket = new Socket("8.8.8.8", 53);
+                    ipCreador = testSocket.getLocalAddress().getHostAddress();
+                    testSocket.close();
+                    System.out.println("   IP real del creador detectada: " + ipCreador);
+                } catch (Exception e) {
+                    System.out.println("   No se pudo detectar IP real del creador, usando: " + ipCreador);
+                }
             }
 
-            // Configuraracion de puertos 
-            int puertoEnvioBase = puertoBase;
-            int puertoRecepcionBase = puertoBase + 1000;
+            this.out.println("CONFIG_LLAMADA_GRUPAL");
+            this.out.println("IP_CREADOR:" + ipCreador);  
+            this.out.println("PUERTO_RECEPCION:" + puertoRecepcionCreador);   
+            this.out.println("PUERTO_ENVIO:" + puertoRecepcionMiembros);      
+            this.out.println("MIEMBROS_INVITADOS:" + (miembros.size() - 1));
+            this.out.println("ID_LLAMADA:" + idLlamadaGrupal);
 
-            // Notificar a TODOS los miembros del grupo
+            for (ClientHandler miembro : miembros) {
+                if (!miembro.clientName.equals(this.clientName)) {
+                    String ipMiembro = miembro.clientSocket.getInetAddress().getHostAddress();
+                    
+                    if (ipMiembro.equals("127.0.0.1") || ipMiembro.equals("localhost")) {
+                        try {
+                            Socket testSocket = new Socket("8.8.8.8", 53);
+                            ipMiembro = testSocket.getLocalAddress().getHostAddress();
+                            testSocket.close();
+                        } catch (Exception e) {
+                        }
+                    }
+                    
+                    this.out.println("IP_MIEMBRO:" + ipMiembro);
+                    this.out.println("PUERTO_ENVIO_MIEMBRO:" + puertoRecepcionMiembros);
+                }
+            }
+            this.out.println("END_IP_LIST");
+
             int miembrosNotificados = 0;
-            List<String> ipsMiembros = new ArrayList<>();
-
+            
             for (ClientHandler miembro : miembros) {
                 if (!miembro.clientName.equals(this.clientName)) {
                     try {
                         String ipMiembro = miembro.clientSocket.getInetAddress().getHostAddress();
+                        
+                        System.out.println("Configurando miembro " + miembro.clientName + ":");
+                        System.out.println("   IP: " + ipMiembro);
+                        System.out.println("   Escucha en: " + puertoRecepcionMiembros + " (recibe del creador)");
+                        System.out.println("   Envía a: " + ipCreador + ":" + puertoRecepcionCreador + " (envía al creador)");
 
                         miembro.out.println("LLAMADA_GRUPAL_INCOMING");
-                        miembro.dataOut.writeUTF(this.clientName); // Creador
-                        miembro.dataOut.writeUTF(grupoDestino); // Grupo
-                        miembro.dataOut.writeUTF(this.clientSocket.getInetAddress().getHostAddress()); // IP del creador
-                        miembro.dataOut.writeInt(puertoRecepcionBase); // Puerto para recepcion
-                        miembro.dataOut.writeInt(puertoEnvioBase); // Puerto para envio
-                        miembro.dataOut.writeUTF(idLlamadaGrupal); // ID de llamada
+                        miembro.dataOut.writeUTF(this.clientName);
+                        miembro.dataOut.writeUTF(grupoDestino);
+                        miembro.dataOut.writeUTF(ipCreador);  
+                        miembro.dataOut.writeInt(puertoRecepcionMiembros);  
+                        miembro.dataOut.writeInt(puertoRecepcionCreador);   
+                        miembro.dataOut.writeUTF(idLlamadaGrupal);
                         miembro.dataOut.flush();
+                        
                         miembrosNotificados++;
-
-                        ipsMiembros.add(ipMiembro);
+                        System.out.println("  Miembro configurado: " + miembro.clientName);
 
                     } catch (Exception e) {
-                        System.err.println("Error notificando a " + miembro.clientName + ": " + e.getMessage());
+                        System.err.println("   Error configurando " + miembro.clientName + ": " + e.getMessage());
                     }
                 }
             }
 
-            // Informar al creador de la llamada
-            out.println("CONFIG_LLAMADA_GRUPAL");
-            out.println("IP_CREADOR:" + this.clientSocket.getInetAddress().getHostAddress());
-            out.println("PUERTO_RECEPCION:" + puertoRecepcionBase);
-            out.println("PUERTO_ENVIO:" + puertoEnvioBase);
-            out.println("MIEMBROS_INVITADOS:" + miembrosNotificados);
-            out.println("ID_LLAMADA:" + idLlamadaGrupal);
-
-            // Enviar lista de IPs de miembros
-            for (String ip : ipsMiembros) {
-                out.println("IP_MIEMBRO:" + ip);
-            }
-            out.println("END_IP_LIST");
-
-            System.out.println("Llamada grupal configurada. Miembros notificados: " + miembrosNotificados);
+            System.out.println("Llamada grupal SIMÉTRICA configurada - " + miembrosNotificados + " miembros notificados");
             out.println("Llamada grupal iniciada al grupo '" + grupoDestino + "'. Esperando respuestas...");
 
         } catch (Exception e) {
             out.println("Error al iniciar llamada grupal: " + e.getMessage());
-            System.err.println("Error en llamada grupal de " + clientName + ": " + e.getMessage());
+            System.err.println("Error en llamada grupal: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Manejar aceptacion de llamada grupal
     private void manejarAceptacionLlamadaGrupal() {
         System.out.println("Usuario " + clientName + " se unio a llamada grupal activa");
     }
@@ -331,56 +352,67 @@ public class ClientHandler implements Runnable {
         ClientHandler receptor = users.get(destinatario);
 
         try {
-            
             String ipReceptor = receptor.clientSocket.getInetAddress().getHostAddress();
             String ipLlamante = this.clientSocket.getInetAddress().getHostAddress();
 
-            
-            if (ipReceptor.equals("127.0.0.1") || ipReceptor.equals("localhost")) {
-                if (!ipLlamante.equals("127.0.0.1") && !ipLlamante.equals("localhost")) {
-                    out.println("El usuario esta en localhost pero tu estas en red externa.");
-                    out.println(
-                            "El usuario debe conectarse desde fuera de localhost para llamadas entre computadores.");
-                    return;
+            System.out.println("CONFIGURANDO LLAMADA:");
+            System.out.println("   Llamante: " + clientName + " (" + ipLlamante + ")");
+            System.out.println("   Receptor: " + destinatario + " (" + ipReceptor + ")");
+
+            if (ipLlamante.equals("127.0.0.1") || ipLlamante.equals("localhost")) {
+                System.out.println("ADVERTENCIA: Llamante está en localhost");
+                // Intentar obtener IP real de la red
+                try {
+                    Socket testSocket = new Socket("8.8.8.8", 53);
+                    ipLlamante = testSocket.getLocalAddress().getHostAddress();
+                    testSocket.close();
+                    System.out.println("   IP real detectada: " + ipLlamante);
+                } catch (Exception e) {
+                    System.out.println("   No se pudo detectar IP real");
                 }
             }
 
-            // Usar puertos distintos y bien separados
-            int puertoBase = 18000 + new Random().nextInt(1000);
-            int puertoEnvio = puertoBase;
-            int puertoRecepcion = puertoBase + 100;
+            if (ipReceptor.equals("127.0.0.1") || ipReceptor.equals("localhost")) {
+                System.out.println("ADVERTENCIA: Receptor está en localhost");
+                if (ipLlamante.equals("127.0.0.1") || ipLlamante.equals("localhost")) {
+                    ipReceptor = "127.0.0.1";
+                    ipLlamante = "127.0.0.1";
+                    System.out.println("   Ambos en localhost - Usando 127.0.0.1");
+                }
+            }
 
-            System.out.println("Configurando llamada individual:");
-            System.out.println("   De: " + clientName + " (" + ipLlamante + ")");
-            System.out.println("   Para: " + destinatario + " (" + ipReceptor + ")");
-            System.out.println("   Puerto envio: " + puertoEnvio);
-            System.out.println("   Puerto recepcion: " + puertoRecepcion);
+            int puertoBase = 50000 + new Random().nextInt(10000);
+            int puertoEnvioLlamante = puertoBase;
+            int puertoRecepcionLlamante = puertoBase + 1000;
 
-            // Informar al llamante
+            System.out.println(" CONFIGURACIÓN DE PUERTOS:");
+            System.out.println("   " + clientName + " ENVÍA → " + ipReceptor + ":" + puertoEnvioLlamante);
+            System.out.println("   " + clientName + " RECIBE ← " + puertoRecepcionLlamante);
+            System.out.println("   " + destinatario + " ENVÍA → " + ipLlamante + ":" + puertoRecepcionLlamante);
+            System.out.println("   " + destinatario + " RECIBE ← " + puertoEnvioLlamante);
+
             out.println("IP_DESTINO:" + ipReceptor);
-            out.println("PUERTO_ENVIO:" + puertoEnvio);
-            out.println("PUERTO_RECEPCION:" + puertoRecepcion);
+            out.println("PUERTO_ENVIO:" + puertoEnvioLlamante);
+            out.println("PUERTO_RECEPCION:" + puertoRecepcionLlamante);
 
-            // Notificar al receptor
+            Thread.sleep(200);
+
             receptor.out.println("LLAMADA_INCOMING");
             receptor.dataOut.writeUTF(this.clientName);
-            receptor.dataOut.writeUTF(ipLlamante); // IP del llamante
-            receptor.dataOut.writeInt(puertoRecepcion); // Puerto donde recibir
-            receptor.dataOut.writeInt(puertoEnvio); // Puerto donde enviar
+            receptor.dataOut.writeUTF(ipLlamante);
+            receptor.dataOut.writeInt(puertoEnvioLlamante);    
+            receptor.dataOut.writeInt(puertoRecepcionLlamante); 
             receptor.dataOut.flush();
 
-            System.out.println("Llamada individual configurada: " + clientName + " -> " + destinatario);
-            out.println("Llamada individual iniciada a " + destinatario + ". Esperando respuesta...");
+            System.out.println("Configuración de llamada completada");
 
         } catch (Exception e) {
-            out.println("Error al iniciar la llamada individual: " + e.getMessage());
-            System.err.println(
-                    "Error en llamada individual de " + clientName + " a " + destinatario + ": " + e.getMessage());
+            out.println("Error al iniciar la llamada.");
+            System.err.println("Error en llamada: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Metodo para listar clientes conectados
     private void listarClientesConectados() {
         StringBuilder listaClientes = new StringBuilder();
 
@@ -528,17 +560,15 @@ public class ClientHandler implements Runnable {
         synchronized (groups) {
             Set<ClientHandler> miembros = groups.get(grupo);
 
-            // Verificar que el grupo tenga miembros
             if (miembros == null || miembros.isEmpty()) {
                 out.println("El grupo no tiene miembros.");
                 return;
             }
 
-            // Enviar a TODOS los miembros
             for (ClientHandler miembro : miembros) {
                 try {
                     miembro.out.println("[" + grupo + "] " + clientName + ": " + mensaje);
-                    miembro.out.flush(); //  Asegurar que se envíe inmediatamente
+                    miembro.out.flush(); 
                     mensajesEnviados++;
                 } catch (Exception e) {
                     System.err.println("Error enviando mensaje a " + miembro.clientName + ": " + e.getMessage());
@@ -553,7 +583,6 @@ public class ClientHandler implements Runnable {
                 + " receptores)");
     }
 
-    // Notas de voz privadas
     private void manejarNotaVozPrivada() throws IOException {
         List<String> disponibles = new ArrayList<>();
         synchronized (users) {
@@ -616,7 +645,6 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // Notas de voz grupales
     private void manejarNotaVozGrupo() throws IOException {
         if (groups.isEmpty()) {
             out.println("No hay grupos disponibles.");
@@ -674,7 +702,6 @@ public class ClientHandler implements Runnable {
                 }
             }
 
-            // Enviar a TODOS los miembros incluyendo al emisor
             int exitosos = 0;
             int totalMiembros = 0;
 

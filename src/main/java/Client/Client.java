@@ -2,6 +2,8 @@ package Client;
 import javax.sound.sampled.*;
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import Client.*;
@@ -104,180 +106,222 @@ public class Client {
         }
     }
 
-    // Llamada entrante individual
+    // Llamada entrante individual - VERSIÓN CORREGIDA
     private static void manejarLlamadaEntrante(DataInputStream dataIn, PrintWriter out) {
         try {
             String emisor = dataIn.readUTF();
-            String ip = dataIn.readUTF();
-            int puertoRecepcion = dataIn.readInt();
-            int puertoEnvio = dataIn.readInt();
+            String ipLlamante = dataIn.readUTF();
+            int puertoEscucha = dataIn.readInt();  // Donde YO debo ESCUCHAR
+            int puertoEnvio = dataIn.readInt();    // Donde YO debo ENVIAR
 
-            System.out.println("\n=== LLAMADA ENTRANTE ===");
-            System.out.println("De: " + emisor);
-            System.out.println("Desde: " + ip);
-            System.out.println("Puerto recepcion: " + puertoRecepcion);
-            System.out.println("Puerto envio: " + puertoEnvio);
-            System.out.println("Aceptar llamada? (S/N):");
+            System.out.println("\nLLAMADA ENTRANTE de " + emisor);
+            System.out.println("   IP Llamante: " + ipLlamante);
+            System.out.println("   Yo ESCUCHO en puerto: " + puertoEscucha);
+            System.out.println("   Yo ENVÍO a puerto: " + puertoEnvio);
+            System.out.println("¿Aceptar llamada? (S/N):");
             
             String respuesta;
             synchronized (enterLock) {
                 Scanner tempScanner = new Scanner(System.in);
-                respuesta = tempScanner.nextLine().trim();
+                respuesta = tempScanner.nextLine().trim().toUpperCase();
             }
 
-            if (respuesta.equalsIgnoreCase("S")) {
-                System.out.println("Aceptando llamada...");
+            if (respuesta.equals("S")) {
+                System.out.println("Llamada aceptada - Iniciando comunicación...");
+                
+                AudioCallSender.prepararNuevaLlamada();
+                AudioCallSender.agregarDestinoLlamada(ipLlamante, puertoEnvio);
 
-                System.out.println("Configuracion de puertos:");
-                System.out.println("   Escucha en: " + puertoRecepcion);
-                System.out.println("   Envia a: " + puertoEnvio);
-
-                // Iniciar recepcion PRIMERO
                 new Thread(() -> {
-                    System.out.println("Iniciando receptor de audio...");
-                    AudioCallReceiver.iniciarRecepcion(puertoRecepcion);
+                    try {
+                        System.out.println("Iniciando RECEPTOR en puerto " + puertoEscucha);
+                        AudioCallReceiver.iniciarRecepcionIndividual(puertoEscucha);
+                        Thread.sleep(3000);
+                        
+                        System.out.println("Iniciando ENVÍO a " + ipLlamante + ":" + puertoEnvio);
+                        AudioCallSender.iniciarLlamadaIndividual(ipLlamante, puertoEnvio);
+                        
+                        llamadaActiva = true;
+                        out.println("CALL_ACCEPTED");
+                        System.out.println("Llamada ACTIVA - Escribe '10' para terminar");
+                    } catch (Exception e) {
+                        System.err.println("Error iniciando llamada: " + e.getMessage());
+                        e.printStackTrace();
+                    }
                 }).start();
-
-                Thread.sleep(1000);
-
-                // Luego iniciar envio
-                new Thread(() -> {
-                    System.out.println("Iniciando envio de audio...");
-                    AudioCallSender.iniciarLlamada(ip, puertoEnvio);
-                }).start();
-
-                llamadaActiva = true;
-                out.println("CALL_ACCEPTED");
-                System.out.println("*** Llamada activa - Escribe '10' para terminar ***");
-
             } else {
-                System.out.println("Llamada rechazada.");
+                System.out.println("Llamada rechazada");
                 out.println("CALL_REJECTED");
             }
+            
         } catch (Exception e) {
-            System.err.println("Error al manejar llamada entrante: " + e.getMessage());
+            System.err.println("Error al manejar llamada: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Llamada grupal entrante
+   private static void manejarConfiguracionLlamada(String lineaRecibida, BufferedReader in) {
+        try {
+            String ip = lineaRecibida.split(":")[1];
+            int puertoEnvio = Integer.parseInt(in.readLine().split(":")[1]);  
+            int puertoRecepcion = Integer.parseInt(in.readLine().split(":")[1]); 
+
+            System.out.println("Llamada conectada - Configuración CORREGIDA:");
+            System.out.println("   IP Destino: " + ip);
+            System.out.println("   Yo ENVÍO a: " + puertoEnvio);
+            System.out.println("   Yo RECIBO en: " + puertoRecepcion);
+
+            AudioCallSender.prepararNuevaLlamada();
+            AudioCallSender.agregarDestinoLlamada(ip, puertoEnvio);
+
+            new Thread(() -> {
+                try {
+                    System.out.println("Iniciando RECEPTOR en puerto " + puertoRecepcion);
+                    AudioCallReceiver.iniciarRecepcionIndividual(puertoRecepcion);
+                    
+                    // Esperar a que el receptor esté listo
+                    Thread.sleep(2000);
+                    
+                    System.out.println("Iniciando ENVÍO a puerto " + puertoEnvio);
+                    AudioCallSender.iniciarLlamadaIndividual(ip, puertoEnvio);
+                    
+                    llamadaActiva = true;
+                    System.out.println("Llamada BIDIRECCIONAL ACTIVA - Escribe '10' para terminar");
+                } catch (Exception e) {
+                    System.err.println("Error iniciando llamada: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }).start();
+            
+        } catch (Exception e) {
+            System.err.println("Error en configuración: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+   
     private static void manejarLlamadaGrupalEntrante(DataInputStream dataIn, PrintWriter out) {
         try {
             String emisor = dataIn.readUTF();
             String grupo = dataIn.readUTF();
-            String ip = dataIn.readUTF();
-            int puertoRecepcion = dataIn.readInt();
-            int puertoEnvio = dataIn.readInt();
+            String ipCreador = dataIn.readUTF();
+            int puertoRecepcionMiembro = dataIn.readInt();  
+            int puertoEnvioMiembro = dataIn.readInt();      
             String idLlamada = dataIn.readUTF();
 
-            System.out.println("\n=== LLAMADA GRUPAL ENTRANTE ===");
-            System.out.println("De: " + emisor);
-            System.out.println("Grupo: " + grupo);
-            System.out.println("ID Llamada: " + idLlamada);
-            System.out.println("Puerto recepcion: " + puertoRecepcion);
-            System.out.println("Puerto envio: " + puertoEnvio);
-            System.out.println("Unirte a la llamada grupal? (S/N):");
+            System.out.println("\n LLAMADA GRUPAL ENTRANTE");
+            System.out.println("   De: " + emisor + " (Creador)");
+            System.out.println("   Grupo: " + grupo);
+            System.out.println("   IP Creador: " + ipCreador);
+            System.out.println("   Yo ESCUCHO en: " + puertoRecepcionMiembro + " (recibo del creador)");
+            System.out.println("   Yo ENVÍO a: " + ipCreador + ":" + puertoEnvioMiembro + " (envío al creador)");
+            System.out.println("   ID Llamada: " + idLlamada);
+            System.out.println("¿Unirte a la llamada grupal? (S/N):");
             
             String respuesta;
             synchronized (enterLock) {
                 Scanner tempScanner = new Scanner(System.in);
-                respuesta = tempScanner.nextLine().trim();
+                respuesta = tempScanner.nextLine().trim().toUpperCase();
             }
 
-            if (respuesta.equalsIgnoreCase("S")) {
-                System.out.println("Uniendote a llamada grupal...");
+            if (respuesta.equals("S")) {
+                System.out.println("Uniéndote a llamada grupal como MIEMBRO...");
 
-                new Thread(() -> AudioCallReceiver.iniciarRecepcion(puertoRecepcion, "GRUPAL", idLlamada)).start();
-                Thread.sleep(500);
-                new Thread(() -> AudioCallSender.iniciarLlamada(ip, puertoEnvio, "GRUPAL", idLlamada)).start();
+                AudioCallSender.prepararNuevaLlamada();
+                AudioCallSender.agregarDestinoLlamada(ipCreador, puertoEnvioMiembro);
 
-                llamadaActiva = true;
-                out.println("CALL_GRUPAL_ACCEPTED");
-                System.out.println("*** En llamada grupal - Escribe '10' para salir ***");
+                new Thread(() -> {
+                    try {
+                        System.out.println("Iniciando RECEPTOR GRUPAL en puerto " + puertoRecepcionMiembro);
+                        AudioCallReceiver.iniciarRecepcionGrupal(puertoRecepcionMiembro, idLlamada);
+                        
+                        // Esperar a que el receptor esté listo antes de enviar
+                        Thread.sleep(3000);
+                        
+                        System.out.println("Iniciando ENVÍO GRUPAL a CREADOR: " + ipCreador + ":" + puertoEnvioMiembro);
+                        AudioCallSender.iniciarLlamadaGrupal(idLlamada);
+                        
+                        llamadaActiva = true;
+                        out.println("CALL_GRUPAL_ACCEPTED");
+                        System.out.println("En llamada grupal como MIEMBRO - Escribe '10' para salir");
+                    } catch (Exception e) {
+                        System.err.println("Error uniéndose a llamada grupal: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                }).start();
             } else {
                 System.out.println("Llamada grupal rechazada.");
                 out.println("CALL_GRUPAL_REJECTED");
             }
         } catch (Exception e) {
-            System.err.println("Error al manejar llamada grupal entrante: " + e.getMessage());
+            System.err.println("Error al manejar llamada grupal: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
-    // Configuracion de llamada individual
-    private static void manejarConfiguracionLlamada(String lineaRecibida, BufferedReader in) {
-        try {
-            String ip = lineaRecibida.split(":")[1];
-            String puertoEnvioLine = in.readLine();
-            String puertoRecepcionLine = in.readLine();
-
-            if (puertoEnvioLine != null && puertoEnvioLine.startsWith("PUERTO_ENVIO:") &&
-                puertoRecepcionLine != null && puertoRecepcionLine.startsWith("PUERTO_RECEPCION:")) {
-                
-                int puertoEnvio = Integer.parseInt(puertoEnvioLine.split(":")[1]);
-                int puertoRecepcion = Integer.parseInt(puertoRecepcionLine.split(":")[1]);
-
-                System.out.println("\n=== INICIANDO LLAMADA ===");
-                System.out.println("Conectando con: " + ip);
-                System.out.println("Puerto envio: " + puertoEnvio);
-                System.out.println("Puerto recepcion: " + puertoRecepcion);
-
-                new Thread(() -> AudioCallSender.iniciarLlamada(ip, puertoEnvio)).start();
-                Thread.sleep(500);
-                new Thread(() -> AudioCallReceiver.iniciarRecepcion(puertoRecepcion)).start();
-
-                llamadaActiva = true;
-                System.out.println("*** Llamada activa - Escribe '10' para terminar ***");
-            }
-        } catch (Exception e) {
-            System.err.println("Error en configuracion de llamada: " + e.getMessage());
-        }
-    }
-
    
     private static void manejarConfiguracionLlamadaGrupal(BufferedReader in) {
         try {
             String ipCreador = in.readLine().split(":")[1];
-            String puertoRecepcionLine = in.readLine().split(":")[1];
-            String puertoEnvioLine = in.readLine().split(":")[1];
+            String puertoRecepcionCreadorLine = in.readLine().split(":")[1];
+            String puertoEnvioCreadorLine = in.readLine().split(":")[1];
             String miembrosLine = in.readLine().split(":")[1];
             String idLlamada = in.readLine().split(":")[1];
 
-            int puertoRecepcion = Integer.parseInt(puertoRecepcionLine);
-            int puertoEnvio = Integer.parseInt(puertoEnvioLine);
+            int puertoRecepcionCreador = Integer.parseInt(puertoRecepcionCreadorLine);
+            int puertoEnvioCreador = Integer.parseInt(puertoEnvioCreadorLine);
             int miembrosInvitados = Integer.parseInt(miembrosLine);
 
-            System.out.println("\n=== INICIANDO LLAMADA GRUPAL ===");
-            System.out.println("Miembros invitados: " + miembrosInvitados);
-            System.out.println("Puerto recepcion: " + puertoRecepcion);
-            System.out.println("Puerto envio: " + puertoEnvio);
-            System.out.println("ID Llamada: " + idLlamada);
+            System.out.println("Configurando llamada grupal como CREADOR");
+            System.out.println("   IP Creador: " + ipCreador);
+            System.out.println("   Yo ESCUCHO en: " + puertoRecepcionCreador + " (miembros me ENVÍAN aquí)");
+            System.out.println("   Yo ENVÍO a: " + puertoEnvioCreador + " (miembros ESCUCHAN aquí)");
+            System.out.println("   Miembros invitados: " + miembrosInvitados);
 
-            // Limpiar destinos anteriores
-            AudioCallSender.destinos.clear();
-
-            // Agregar al creador como destino
-            AudioCallSender.agregarDestino(ipCreador, puertoEnvio);
-
-            // Leer IPs de otros miembros
+            AudioCallSender.prepararNuevaLlamada();
+            List<String> destinosInfo = new ArrayList<>();
             String linea;
+            
             while (!(linea = in.readLine()).equals("END_IP_LIST")) {
                 if (linea.startsWith("IP_MIEMBRO:")) {
                     String ipMiembro = linea.split(":")[1];
-                    AudioCallSender.agregarDestino(ipMiembro, puertoEnvio);
+                    
+                    AudioCallSender.agregarDestinoLlamada(ipMiembro, puertoEnvioCreador);
+                    destinosInfo.add(ipMiembro + ":" + puertoEnvioCreador);
+                    System.out.println("  Agregado destino: " + ipMiembro + ":" + puertoEnvioCreador);
                 }
             }
 
-            // Iniciar envío SIN borrar destinos
-            new Thread(() -> AudioCallSender.iniciarLlamadaGrupal("GRUPAL", idLlamada)).start();
-            Thread.sleep(500);
-            new Thread(() -> AudioCallReceiver.iniciarRecepcion(puertoRecepcion, "GRUPAL", idLlamada)).start();
+            System.out.println("   Total destinos configurados: " + destinosInfo.size());
 
-            llamadaActiva = true;
-            System.out.println("*** Llamada grupal activa - Escribe '10' para salir ***");
+            if (destinosInfo.isEmpty()) {
+                System.err.println("ERROR: No se configuraron destinos para la llamada grupal");
+                return;
+            }
+
+            new Thread(() -> {
+                try {
+                    System.out.println("INICIANDO ENVÍO GRUPAL como CREADOR");
+                    System.out.println("   Destinos: " + destinosInfo.size());
+                    
+                    Thread.sleep(4000);
+                    
+                    AudioCallSender.iniciarLlamadaGrupal(idLlamada);
+                    
+                    Thread.sleep(2000);
+                    
+                    System.out.println("Iniciando RECEPTOR GRUPAL en puerto " + puertoRecepcionCreador);
+                    AudioCallReceiver.iniciarRecepcionGrupal(puertoRecepcionCreador, idLlamada);
+
+                    llamadaActiva = true;
+                    System.out.println("Llamada grupal ACTIVA como CREADOR - Escribe '10' para salir");
+                    
+                } catch (Exception e) {
+                    System.err.println("Error iniciando llamada grupal: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }).start();
 
         } catch (Exception e) {
-            System.err.println("Error en configuracion de llamada grupal: " + e.getMessage());
+            System.err.println("Error en configuración de llamada grupal: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -445,7 +489,6 @@ public class Client {
 
             System.out.println("Audio guardado: " + nombreUnico);
 
-            // Reproduccion automatica para audios grupales
             if (esAudioGrupal) {
                 System.out.println("Reproduciendo audio grupal automaticamente...");
                 new Thread(() -> {
@@ -615,5 +658,18 @@ public class Client {
                 System.out.println("Error en reproduccion local.");
             }
         }).start();
+    }
+    private static void diagnosticoGrupal() {
+        System.out.println("\nDIAGNÓSTICO LLAMADA GRUPAL:");
+        System.out.println("   Llamada activa: " + llamadaActiva);
+        System.out.println("   Destinos configurados: " + AudioCallSender.getDestinos().size());
+        
+        try {
+            java.net.InetAddress localHost = java.net.InetAddress.getLocalHost();
+            System.out.println("   IP Local: " + localHost.getHostAddress());
+            System.out.println("   Hostname: " + localHost.getHostName());
+        } catch (Exception e) {
+            System.err.println("   Error obteniendo info de red: " + e.getMessage());
+        }
     }
 }

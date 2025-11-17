@@ -20,8 +20,8 @@ public class AudioCallSender {
     private static String idLlamada = "";
     static List<Destino> destinos = new CopyOnWriteArrayList<>();
     
-    private static final int BUFFER_SIZE = 1024;
-    private static final int SAMPLE_RATE = 16000;
+    private static final int BUFFER_SIZE = 512;
+    private static final int SAMPLE_RATE = 8000;
     private static final int SAMPLE_SIZE = 16;
     private static final int CHANNELS = 1;
     
@@ -44,292 +44,179 @@ public class AudioCallSender {
         }
     }
 
-    public static void iniciarLlamada(String ipDestino, int puertoDestino) {
-        iniciarLlamada(ipDestino, puertoDestino, "INDIVIDUAL", "");
+    public static void prepararNuevaLlamada() {
+        destinos.clear();
+        System.out.println("Lista de destinos limpiada para nueva llamada");
     }
 
-    public static void iniciarLlamada(String ipDestino, int puertoDestino, String tipo, String idLlamada) {
-        AudioCallSender.tipoLlamada = tipo;
-        AudioCallSender.idLlamada = idLlamada;
-        
-        // Solo limpiar destinos si es llamada individual
-        if (!"GRUPAL".equals(tipo)) {
-            destinos.clear();
-            agregarDestino(ipDestino, puertoDestino);
+    public static void agregarDestinoLlamada(String ip, int puerto) {
+        for (Destino destino : destinos) {
+            if (destino.ip.equals(ip) && destino.puerto == puerto) {
+                System.out.println("Destino ya existe: " + destino);
+                return;
+            }
         }
         
-        enviando = true;
-        socket = null;
-        microfono = null;
-
-        System.out.println((tipo.equals("GRUPAL") ? "LLAMADA GRUPAL" : "LLAMADA INDIVIDUAL") + " - INICIANDO ENVIO");
-        System.out.println("Destino principal: " + ipDestino + ":" + puertoDestino);
-        if (tipo.equals("GRUPAL")) {
-            System.out.println("ID Llamada: " + idLlamada);
-            System.out.println("Enviando a " + destinos.size() + " destinatarios");
-        }
-
-        Thread senderThread = new Thread(() -> {
-            try {
-                AudioFormat formato = getBestAudioFormat();
-                DataLine.Info info = new DataLine.Info(TargetDataLine.class, formato);
-
-                if (!AudioSystem.isLineSupported(info)) {
-                    System.out.println("Formato de microfono no soportado. Probando alternativas...");
-                    formato = getFallbackAudioFormat();
-                    info = new DataLine.Info(TargetDataLine.class, formato);
-                }
-
-                microfono = (TargetDataLine) AudioSystem.getLine(info);
-                microfono.open(formato);
-                microfono.start();
-
-                System.out.println("Microfono configurado:");
-                System.out.println("   Sample Rate: " + formato.getSampleRate() + " Hz");
-                System.out.println("   Sample Size: " + formato.getSampleSizeInBits() + " bits");
-                System.out.println("   Canales: " + formato.getChannels());
-                System.out.println("   Buffer: " + BUFFER_SIZE + " bytes");
-
-                socket = new DatagramSocket();
-                socket.setSoTimeout(1000);
-
-                byte[] buffer = new byte[BUFFER_SIZE];
-                inicioEnvio = System.currentTimeMillis();
-
-                System.out.println("Enviando audio...");
-                System.out.println("Habla ahora - Escribe '10' en el menu principal para terminar");
-
-                while (enviando && microfono.isOpen()) {
-                    try {
-                        int bytesRead = microfono.read(buffer, 0, buffer.length);
-                        
-                        if (bytesRead > 0) {
-                            for (Destino destino : destinos) {
-                                try {
-                                    DatagramPacket paquete = new DatagramPacket(
-                                        buffer, bytesRead,
-                                        InetAddress.getByName(destino.ip), destino.puerto
-                                    );
-                                    socket.send(paquete);
-                                    
-                                    destino.paquetesEnviados++;
-                                    destino.bytesEnviados += bytesRead;
-                                } catch (Exception e) {
-                                    System.err.println("Error enviando a " + destino + ": " + e.getMessage());
-                                }
-                            }
-                            
-                            paquetesEnviados++;
-                            bytesEnviados += bytesRead;
-                        }
-                        
-                        Thread.sleep(10);
-                        
-                    } catch (Exception e) {
-                        if (enviando) {
-                            System.err.println("Error en envio de audio: " + e.getMessage());
-                            Thread.sleep(100);
-                        }
-                    }
-                }
-
-            } catch (LineUnavailableException e) {
-                System.err.println("Linea de audio no disponible: " + e.getMessage());
-                System.err.println("Verifica que el microfono este conectado y no este siendo usado por otra aplicacion");
-            } catch (Exception e) {
-                if (enviando) {
-                    System.err.println("ERROR en AudioCallSender: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            } finally {
-                cerrarRecursos();
-                mostrarEstadisticasFinales();
-            }
-        });
-        
-        senderThread.setName("AudioSender-" + puertoDestino);
-        senderThread.start();
-    }
-
-    // Nuevo método para llamadas grupales que ya tienen destinos agregados
-    public static void iniciarLlamadaGrupal(String tipo, String idLlamada) {
-        AudioCallSender.tipoLlamada = tipo;
-        AudioCallSender.idLlamada = idLlamada;
-        enviando = true;
-        socket = null;
-        microfono = null;
-
-        System.out.println("LLAMADA GRUPAL - INICIANDO ENVIO");
-        System.out.println("ID Llamada: " + idLlamada);
-        System.out.println("Enviando a " + destinos.size() + " destinatarios");
-
-        Thread senderThread = new Thread(() -> {
-            try {
-                AudioFormat formato = getBestAudioFormat();
-                DataLine.Info info = new DataLine.Info(TargetDataLine.class, formato);
-
-                if (!AudioSystem.isLineSupported(info)) {
-                    System.out.println("Formato de microfono no soportado. Probando alternativas...");
-                    formato = getFallbackAudioFormat();
-                    info = new DataLine.Info(TargetDataLine.class, formato);
-                }
-
-                microfono = (TargetDataLine) AudioSystem.getLine(info);
-                microfono.open(formato);
-                microfono.start();
-
-                System.out.println("Microfono configurado:");
-                System.out.println("   Sample Rate: " + formato.getSampleRate() + " Hz");
-                System.out.println("   Sample Size: " + formato.getSampleSizeInBits() + " bits");
-                System.out.println("   Canales: " + formato.getChannels());
-                System.out.println("   Buffer: " + BUFFER_SIZE + " bytes");
-
-                socket = new DatagramSocket();
-                socket.setSoTimeout(1000);
-
-                byte[] buffer = new byte[BUFFER_SIZE];
-                inicioEnvio = System.currentTimeMillis();
-
-                System.out.println("Enviando audio...");
-                System.out.println("Habla ahora - Escribe '10' en el menu principal para terminar");
-
-                while (enviando && microfono.isOpen()) {
-                    try {
-                        int bytesRead = microfono.read(buffer, 0, buffer.length);
-                        
-                        if (bytesRead > 0) {
-                            for (Destino destino : destinos) {
-                                try {
-                                    DatagramPacket paquete = new DatagramPacket(
-                                        buffer, bytesRead,
-                                        InetAddress.getByName(destino.ip), destino.puerto
-                                    );
-                                    socket.send(paquete);
-                                    
-                                    destino.paquetesEnviados++;
-                                    destino.bytesEnviados += bytesRead;
-                                } catch (Exception e) {
-                                    System.err.println("Error enviando a " + destino + ": " + e.getMessage());
-                                }
-                            }
-                            
-                            paquetesEnviados++;
-                            bytesEnviados += bytesRead;
-                        }
-                        
-                        Thread.sleep(10);
-                        
-                    } catch (Exception e) {
-                        if (enviando) {
-                            System.err.println("Error en envio de audio: " + e.getMessage());
-                            Thread.sleep(100);
-                        }
-                    }
-                }
-
-            } catch (LineUnavailableException e) {
-                System.err.println("Linea de audio no disponible: " + e.getMessage());
-                System.err.println("Verifica que el microfono este conectado y no este siendo usado por otra aplicacion");
-            } catch (Exception e) {
-                if (enviando) {
-                    System.err.println("ERROR en AudioCallSender: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            } finally {
-                cerrarRecursos();
-                mostrarEstadisticasFinales();
-            }
-        });
-        
-        senderThread.setName("AudioSender-GRUPAL");
-        senderThread.start();
-    }
-
-    public static void agregarDestino(String ip, int puerto) {
         Destino nuevoDestino = new Destino(ip, puerto);
         destinos.add(nuevoDestino);
         System.out.println("Destino agregado: " + nuevoDestino);
+    }
+
+    public static void iniciarLlamadaIndividual(String ipDestino, int puertoDestino) {
+        prepararNuevaLlamada();
+        agregarDestinoLlamada(ipDestino, puertoDestino);
+        System.out.println("Iniciando llamada...");
+        iniciarLlamada("INDIVIDUAL", "");
+    }
+
+    public static void iniciarLlamadaGrupal(String idLlamadaGrupal) {
+        if (destinos.isEmpty()) {
+            System.err.println("Error: No hay destinos configurados para la llamada grupal");
+            System.out.println("   Destinos actuales: " + destinos.size());
+            return;
+        }
+        
+        System.out.println("INICIANDO LLAMADA GRUPAL con " + destinos.size() + " destinos:");
+        for (Destino destino : destinos) {
+            System.out.println("   " + destino);
+        }
+        
+        iniciarLlamada("GRUPAL", idLlamadaGrupal);
+    }
+
+    private static void iniciarLlamada(String tipo, String idLlamadaEspecifica) {
+        if (destinos.isEmpty()) {
+            System.err.println("Error: No hay destinos configurados");
+            return;
+        }
+
+        AudioCallSender.tipoLlamada = tipo;
+        AudioCallSender.idLlamada = idLlamadaEspecifica;
+        enviando = true;
+
+        System.out.println("\n=== INICIANDO " + (tipo.equals("GRUPAL") ? "LLAMADA GRUPAL" : "LLAMADA INDIVIDUAL") + " ===");
+        System.out.println("ID Llamada: " + (idLlamadaEspecifica.isEmpty() ? "N/A" : idLlamadaEspecifica));
+        System.out.println("Enviando a " + destinos.size() + " destinatarios:");
+        for (Destino destino : destinos) {
+            System.out.println("   " + destino);
+        }
+
+        Thread senderThread = new Thread(() -> {
+            ejecutarEnvioAudio();
+        });
+        
+        String threadName = "AudioSender-" + tipo + "-" + 
+                           (idLlamadaEspecifica.isEmpty() ? "IND" : idLlamadaEspecifica);
+        senderThread.setName(threadName);
+        senderThread.start();
+    }
+
+
+private static void ejecutarEnvioAudio() {
+        try {
+            AudioFormat formato = new AudioFormat(SAMPLE_RATE, SAMPLE_SIZE, CHANNELS, true, false);
+            DataLine.Info info = new DataLine.Info(TargetDataLine.class, formato);
+
+            if (!AudioSystem.isLineSupported(info)) {
+                System.out.println(" Formato no soportado, probando alternativo...");
+                formato = new AudioFormat(16000.0f, 16, 1, true, false);
+                info = new DataLine.Info(TargetDataLine.class, formato);
+                
+                if (!AudioSystem.isLineSupported(info)) {
+                    System.err.println("No se pudo encontrar un formato de audio compatible");
+                    return;
+                }
+            }
+
+            System.out.println(" Creando socket de envío...");
+            socket = new DatagramSocket();
+            socket.setSoTimeout(1000);
+            microfono = (TargetDataLine) AudioSystem.getLine(info);
+            microfono.open(formato);
+            microfono.start();
+
+            System.out.println("Micrófono configurado:");
+            System.out.println("   Sample Rate: " + formato.getSampleRate() + " Hz");
+            System.out.println("   Buffer Size: " + BUFFER_SIZE + " bytes");
+
+
+            byte[] buffer = new byte[BUFFER_SIZE];
+            inicioEnvio = System.currentTimeMillis();
+
+            System.out.println("ENVÍO INICIADO - Puerto destino: " + 
+                          (destinos.isEmpty() ? "N/A" : destinos.get(0).puerto));
+
+            System.out.println("Escribe '10' en el menú para terminar");
+
+            while (enviando && microfono.isOpen()) {
+                try {
+                    int bytesLeidos = microfono.read(buffer, 0, buffer.length);
+                    
+                    if (bytesLeidos > 0) {
+                        if (paquetesEnviados == 0) {
+                            System.out.println("PRIMER PAQUETE ENVIADO! - " + bytesLeidos + " bytes");
+                        }
+                        for (Destino destino : destinos) {
+                            try {
+                                DatagramPacket paquete = new DatagramPacket(
+                                    buffer, bytesLeidos,
+                                    InetAddress.getByName(destino.ip), destino.puerto
+                                );
+                                socket.send(paquete);
+                                
+                                destino.paquetesEnviados++;
+                                destino.bytesEnviados += bytesLeidos;
+                            } catch (Exception e) {
+                                System.err.println("Error enviando a " + destino + ": " + e.getMessage());
+                            }
+                        }
+                        
+                        paquetesEnviados++;
+                        bytesEnviados += bytesLeidos;
+                        if (paquetesEnviados % 10 == 0) {
+                            System.out.printf("Paquetes enviados: %d\r", paquetesEnviados);
+                        }
+                    }
+                    
+                } catch (Exception e) {
+                    if (enviando) {
+                        System.err.println("Error en envío: " + e.getMessage());
+                    }
+                }
+            }
+
+        } catch (LineUnavailableException e) {
+            System.err.println("Línea de audio no disponible: " + e.getMessage());
+            System.err.println("   Verifica que el micrófono esté conectado");
+        } catch (Exception e) {
+            if (enviando) {
+                System.err.println(" ERROR en AudioCallSender: " + e.getMessage());
+            }
+        } finally {
+            cerrarRecursos();
+            mostrarEstadisticasFinales();
+        }
+    }
+
+    public static void terminarLlamada() {
+        System.out.println("Terminando llamada...");
+        enviando = false;
+        cerrarRecursos();
     }
 
     public static boolean removerDestino(String ip, int puerto) {
         for (Destino destino : destinos) {
             if (destino.ip.equals(ip) && destino.puerto == puerto) {
                 destinos.remove(destino);
-                System.out.println("Destino removido: " + destino);
+                System.out.println(" Destino removido: " + destino);
                 return true;
             }
         }
         return false;
     }
 
-    private static AudioFormat getBestAudioFormat() {
-        try {
-            return new AudioFormat(SAMPLE_RATE, SAMPLE_SIZE, CHANNELS, true, false);
-        } catch (Exception e) {
-            return getFallbackAudioFormat();
-        }
-    }
-
-    private static AudioFormat getFallbackAudioFormat() {
-        System.out.println("Usando formato de audio alternativo...");
-        return new AudioFormat(8000.0f, 16, 1, true, false);
-    }
-
-    private static void mostrarEstadisticasFinales() {
-        long tiempoTotal = (System.currentTimeMillis() - inicioEnvio) / 1000;
-        if (tiempoTotal == 0) tiempoTotal = 1;
-        
-        System.out.println("\nESTADISTICAS FINALES DE ENVIO:");
-        System.out.println("   Tipo: " + tipoLlamada);
-        System.out.println("   Duracion total: " + tiempoTotal + " segundos");
-        System.out.println("   Paquetes enviados: " + paquetesEnviados);
-        System.out.println("   Datos enviados: " + (bytesEnviados / 1024) + " KB");
-        System.out.println("   Promedio: " + (paquetesEnviados / tiempoTotal) + " paquetes/segundo");
-        
-        if (tipoLlamada.equals("GRUPAL")) {
-            System.out.println("   Llamada grupal - Destinos:");
-            for (Destino destino : destinos) {
-                System.out.println("      - " + destino + ": " + destino.paquetesEnviados + " paquetes");
-            }
-        } else {
-            System.out.println("   Llamada individual finalizada");
-        }
-    }
-
-    private static void cerrarRecursos() {
-        try {
-            if (microfono != null) {
-                System.out.println("Cerrando microfono...");
-                microfono.stop();
-                microfono.close();
-                microfono = null;
-            }
-        } catch (Exception e) {
-            System.err.println("Error cerrando microfono: " + e.getMessage());
-        }
-
-        try {
-            if (socket != null && !socket.isClosed()) {
-                System.out.println("Cerrando socket de envio...");
-                socket.close();
-                socket = null;
-            }
-        } catch (Exception e) {
-            System.err.println("Error cerrando socket: " + e.getMessage());
-        }
-    }
-
-    public static void terminarLlamada() {
-        System.out.println("Solicitando terminacion de envio...");
-        enviando = false;
-        
-        if (socket != null && !socket.isClosed()) {
-            try {
-                socket.close();
-            } catch (Exception e) {
-                // Esperado
-            }
-        }
+    public static List<Destino> getDestinos() {
+        return new CopyOnWriteArrayList<>(destinos);
     }
 
     public static boolean isEnviando() {
@@ -337,11 +224,13 @@ public class AudioCallSender {
     }
 
     public static String getEstadisticas() {
+        if (inicioEnvio == 0) return "No hay llamada activa";
+        
         long tiempoTranscurrido = (System.currentTimeMillis() - inicioEnvio) / 1000;
         if (tiempoTranscurrido == 0) tiempoTranscurrido = 1;
         
         return String.format(
-            "Envio %s - %d segundos - %d paquetes - %d KB - %d destinos",
+            "Envío %s - %d segundos - %d paquetes - %d KB - %d destinos",
             tipoLlamada,
             tiempoTranscurrido,
             paquetesEnviados,
@@ -356,14 +245,28 @@ public class AudioCallSender {
             tipoLlamada,
             destinos.size(),
             idLlamada.isEmpty() ? "N/A" : idLlamada,
-            enviando ? "Si" : "No"
+            enviando ? "Sí" : "No"
         );
     }
 
+    public static void diagnostico() {
+        System.out.println("\nDIAGNÓSTICO DE AUDIO CALL SENDER:");
+        System.out.println("   Estado: " + (enviando ? "ACTIVO" : "INACTIVO"));
+        System.out.println("   Tipo llamada: " + tipoLlamada);
+        System.out.println("   Destinos: " + destinos.size());
+        for (Destino destino : destinos) {
+            System.out.println("      - " + destino + " (" + destino.paquetesEnviados + " paquetes)");
+        }
+        System.out.println("   Socket: " + (socket != null ? "CONECTADO" : "DESCONECTADO"));
+        System.out.println("   Micrófono: " + (microfono != null ? "ABIERTO" : "CERRADO"));
+        System.out.println("   Paquetes enviados: " + paquetesEnviados);
+        System.out.println("   Bytes enviados: " + bytesEnviados);
+    }
+
     public static void probarMicrofono() {
-        System.out.println("Probando microfono...");
+        System.out.println("Probando micrófono...");
         try {
-            AudioFormat formato = getBestAudioFormat();
+            AudioFormat formato = new AudioFormat(SAMPLE_RATE, SAMPLE_SIZE, CHANNELS, true, false);
             TargetDataLine testLine = (TargetDataLine) AudioSystem.getLine(
                 new DataLine.Info(TargetDataLine.class, formato));
             testLine.open(formato);
@@ -374,6 +277,7 @@ public class AudioCallSender {
             
             long startTime = System.currentTimeMillis();
             int totalBytes = 0;
+            int segmentosConAudio = 0;
             
             while (System.currentTimeMillis() - startTime < 3000) {
                 int bytesRead = testLine.read(buffer, 0, buffer.length);
@@ -382,17 +286,66 @@ public class AudioCallSender {
                 if (bytesRead > 0) {
                     double nivel = calcularNivelAudio(buffer, bytesRead);
                     System.out.printf("Nivel: %.1f%%\r", nivel * 100);
+                    if (nivel > 0.1) segmentosConAudio++;
                 }
             }
             
             testLine.stop();
             testLine.close();
             
-            System.out.println("\nPrueba completada - Bytes capturados: " + totalBytes);
+            System.out.println("\nPrueba completada:");
+            System.out.println("   Bytes capturados: " + totalBytes);
+            System.out.println("   Segmentos con audio: " + segmentosConAudio);
+            System.out.println("   Estado: " + (segmentosConAudio > 5 ? "FUNCIONANDO" : "REVISAR MICRÓFONO"));
             
         } catch (Exception e) {
-            System.err.println("Error en prueba de microfono: " + e.getMessage());
+            System.err.println("Error en prueba de micrófono: " + e.getMessage());
         }
+    }
+
+    private static void mostrarEstadisticasFinales() {
+        long tiempoTotal = (System.currentTimeMillis() - inicioEnvio) / 1000;
+        if (tiempoTotal == 0) tiempoTotal = 1;
+        
+        System.out.println("\nESTADÍSTICAS FINALES:");
+        System.out.println("   Tipo: " + tipoLlamada);
+        System.out.println("   Duración: " + tiempoTotal + " segundos");
+        System.out.println("   Paquetes enviados: " + paquetesEnviados);
+        System.out.println("   Datos enviados: " + (bytesEnviados / 1024) + " KB");
+        System.out.println("   Promedio: " + (paquetesEnviados / tiempoTotal) + " paquetes/segundo");
+        
+        if (tipoLlamada.equals("GRUPAL") && !destinos.isEmpty()) {
+            System.out.println("   Destinos:");
+            for (Destino destino : destinos) {
+                System.out.println("      - " + destino + ": " + destino.paquetesEnviados + " paquetes");
+            }
+        }
+    }
+
+    private static void cerrarRecursos() {
+        try {
+            if (microfono != null) {
+                microfono.stop();
+                microfono.close();
+                microfono = null;
+                System.out.println("Micrófono cerrado");
+            }
+        } catch (Exception e) {
+            if (microfono != null) {
+                System.err.println("Error cerrando micrófono: " + e.getMessage());
+            }
+        }
+
+        try {
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+                socket = null;
+                System.out.println("🔌 Socket cerrado");
+            }
+        } catch (Exception e) {
+            System.err.println("Error cerrando socket: " + e.getMessage());
+        }
+        enviando = false;
     }
 
     private static double calcularNivelAudio(byte[] audioData, int length) {
@@ -408,14 +361,24 @@ public class AudioCallSender {
         return Math.min(promedio / Short.MAX_VALUE, 1.0);
     }
 
-    public static void diagnostico() {
-        System.out.println("\nDIAGNOSTICO DE AUDIO CALL SENDER:");
-        System.out.println("   Estado: " + (enviando ? "ACTIVO" : "INACTIVO"));
-        System.out.println("   Tipo llamada: " + tipoLlamada);
-        System.out.println("   Destinos: " + destinos.size());
+    public static void diagnosticoGrupal() {
+        System.out.println("\nDIAGNÓSTICO LLAMADA GRUPAL:");
+        System.out.println("   Estado: " + (enviando ? "ENVIANDO" : "DETENIDO"));
+        System.out.println("   Tipo: " + tipoLlamada);
+        System.out.println("   ID: " + (idLlamada.isEmpty() ? "N/A" : idLlamada));
+        System.out.println("   Destinos configurados: " + destinos.size());
+        
+        if (destinos.isEmpty()) {
+            System.out.println("  ERROR: No hay destinos configurados");
+        } else {
+            System.out.println("  Destinos activos:");
+            for (Destino destino : destinos) {
+                System.out.println("      - " + destino + " (" + destino.paquetesEnviados + " paquetes)");
+            }
+        }
+        
         System.out.println("   Socket: " + (socket != null ? "CONECTADO" : "DESCONECTADO"));
-        System.out.println("   Microfono: " + (microfono != null ? "ABIERTO" : "CERRADO"));
-        System.out.println("   Paquetes enviados: " + paquetesEnviados);
-        System.out.println("   Bytes enviados: " + bytesEnviados);
+        System.out.println("   Micrófono: " + (microfono != null ? "ABIERTO" : "CERRADO"));
+        System.out.println("   Paquetes totales: " + paquetesEnviados);
     }
 }

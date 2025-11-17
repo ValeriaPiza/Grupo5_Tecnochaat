@@ -91,7 +91,7 @@ public class AudioPlayer {
                         Thread.sleep(100);
                     }
                 } catch (InterruptedException e) {
-                    // Interrumpido
+                    
                 }
             });
             monitorThread.setDaemon(true);

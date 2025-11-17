@@ -67,7 +67,7 @@ public class AudioSender {
                         System.out.printf("Grabando... %d segundos\r", tiempoTranscurrido);
                     }
                 } catch (InterruptedException e) {
-                    // Thread interrumpido
+                    
                 }
             });
             progressThread.setDaemon(true);
