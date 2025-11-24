@@ -73,12 +73,14 @@ Desde la raíz del repo:
 ### Arranque manual
 - Backend Java:
   - `cd backend-java`
+  - `gradle wrapper` (si es la primera vez que usaras el proyecto)
   - `./gradlew build`
   - `./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
 - Proxy HTTP (Node):
   - `cd proxy-node`
   - `npm install`
-  - `ICE_HOST=localhost ICE_PORT=10000 PORT=3002 npm run start`
+  - `npm install multer` (si no lo tienes, esto es para el envio de audios)
+  - `npm run start` (ICE_HOST=localhost ICE_PORT=10000 PORT=3002)
 - Cliente Web:
   - `cd web-app`
   - `npm install`

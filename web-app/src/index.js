@@ -124,26 +124,17 @@ async function sendAudioNote(blob) {
     }
 
     try {
-        const arrayBuffer = await blob.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        const base64 = btoa(binary);
-        const filename = `audio_${Date.now()}.webm`;
+        const formData = new FormData();
+        formData.append("to", recipient);
+        formData.append("from", currentUser);
+        formData.append("isGroup", String(type === "group"));
+        formData.append("audio", blob, `audio_${Date.now()}.webm`);
 
         const res = await fetch(`${PROXY_URL}/api/audio/upload`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                to: recipient,
-                from: currentUser,
-                isGroup: type === 'group',
-                filename,
-                data: base64
-            })
+            method: "POST",
+            body: formData
         });
+
         const result = await res.json();
         if (result.success) {
             showStatus(`Nota de audio enviada a ${recipient}`, 'success', statusDiv);
@@ -154,6 +145,7 @@ async function sendAudioNote(blob) {
     } catch (err) {
         showStatus('Error enviando audio: ' + err.message, 'error', statusDiv);
     }
+
 }
 
 function setUsername() {

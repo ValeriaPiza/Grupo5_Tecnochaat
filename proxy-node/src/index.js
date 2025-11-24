@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import IceClient from './IceClient.js';
+import multer from "multer";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +13,11 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const ICE_HOST = process.env.ICE_HOST || 'localhost';
 const ICE_PORT = parseInt(process.env.ICE_PORT || '10000', 10);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
 
 app.use(cors());
 app.use(express.json());
@@ -434,24 +441,40 @@ app.get('/api/history/private', async (req, res) => {
     }
 });
 
-// 8b. Subir nota de audio (base64) para guardarla en backend
-app.post('/api/audio/upload', async (req, res) => {
-    try {
-        const { to, from, isGroup, filename, data } = req.body;
-        const sender = from || req.headers['x-username'] || 'WebCliente';
+// audios usando formdata y multer
+app.post("/api/audio/upload", upload.single("audio"), async (req, res) => {
+  try {
+    const { to, from, isGroup } = req.body;
+    const sender = from || req.headers["x-username"] || "WebCliente";
 
-        if (!to || !data) {
-            return res.status(400).json({ success: false, error: 'Parámetros requeridos: to, data' });
-        }
-
-        const buffer = Buffer.from(data, 'base64');
-        const ok = await iceClient.sendAudio(sender, to, !!isGroup, filename || 'audio.webm', new Uint8Array(buffer));
-        res.json({ success: ok });
-    } catch (error) {
-        console.error(' Error subiendo nota de audio:', error);
-        res.status(500).json({ success: false, error: error.message || 'No se pudo subir audio' });
+    if (!to || !req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "Parámetros requeridos: to, audio"
+      });
     }
+
+    const bytes = new Uint8Array(req.file.buffer);
+    const filename = req.file.originalname || "audio.webm";
+
+    const ok = await iceClient.sendAudio(
+      sender,
+      to,
+      isGroup === "true" || isGroup === true,
+      filename,
+      bytes
+    );
+
+    res.json({ success: ok });
+  } catch (error) {
+    console.error(" Error subiendo nota de audio:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "No se pudo subir audio"
+    });
+  }
 });
+
 
 // 8c. Descargar/servir audio histórico
 app.get('/api/audio/download', async (req, res) => {
