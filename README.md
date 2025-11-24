@@ -73,7 +73,6 @@ Desde la raíz del repo:
 ### Arranque manual
 - Backend Java:
   - `cd backend-java`
-  - `gradle wrapper` (si es la primera vez que usaras el proyecto)
   - `./gradlew build`
   - `./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
 - Proxy HTTP (Node):

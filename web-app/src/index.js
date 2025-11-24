@@ -23,7 +23,7 @@ function normalizeDescription(desc) {
     return null;
 }
 
-// Navegación entre secciones
+// navegación entre secciones
 function showSection(sectionId, evt) {
     document.querySelectorAll('.section').forEach(section => {
         section.classList.remove('active');
@@ -153,7 +153,7 @@ function setUsername() {
     const status = document.getElementById('usernameStatus');
     const btn = document.getElementById('connectBtn');
 
-    // Si ya hay sesión, desconecta
+    // si ya hay sesión, desconecta
     if (currentUser) {
         status.textContent = `Desconectando...`;
         fetch(`${PROXY_URL}/api/logout`, {
@@ -210,7 +210,7 @@ function setUsername() {
       });
 }
 
-// Cambiar etiquetas según tipo de mensaje
+// cambiar etiquetas según tipo de mensaje
 document.getElementById('messageType').addEventListener('change', function () {
     const type = this.value;
     const label = document.getElementById('recipientLabel');
@@ -237,7 +237,7 @@ document.getElementById('messageType').addEventListener('change', function () {
     }
 });
 
-// Cambiar etiquetas en historial
+// cambiar etiquetas en historial
 function toggleHistoryInput() {
     const type = document.getElementById('historyType').value;
     const label = document.getElementById('historyLabel');
@@ -252,7 +252,7 @@ function toggleHistoryInput() {
     }
 }
 
-// Enviar mensaje
+// enviar mensaje
 async function sendMessage(e) {
     const type = document.getElementById('messageType').value;
     const recipient = type === 'private'
@@ -300,7 +300,7 @@ async function sendMessage(e) {
     }
 }
 
-// Crear grupo
+// crear grupo
 async function createGroup() {
     const groupName = document.getElementById('groupName').value;
     const groupMembers = document.getElementById('groupMembers').value;
@@ -346,7 +346,7 @@ async function createGroup() {
     }
 }
 
-// Cargar historial
+// cargar historial
 async function loadHistory() {
     const type = document.getElementById('historyType').value;
     const input = document.getElementById('historySelect').value;
@@ -386,7 +386,7 @@ async function loadHistory() {
             cleaned.forEach(item => {
                 const isAudio = item.includes('[AUDIO:');
                 if (isAudio) {
-                    // Espera entradas tipo "[AUDIO: <filename>]"
+                    //espera entradas tipo "[AUDIO: <filename>]"
                     const match = item.match(/\[AUDIO:\s*([^\]]+)\]/i);
                     const filename = match ? match[1].trim() : null;
                     html += `<div class="message audio">${item}`;
@@ -407,7 +407,7 @@ async function loadHistory() {
     }
 }
 
-// Cargar feed de mensajes recientes para el chat actual
+// cargar feed de mensajes recientes para el chat actual
 async function loadMessageFeed() {
     const feed = document.getElementById('messageFeed');
     const type = document.getElementById('messageType')?.value || 'private';
@@ -456,7 +456,7 @@ async function loadMessageFeed() {
     }
 }
 
-// Cargar usuarios conectados
+// cargar usuarios conectados
 async function loadOnlineUsers() {
     const container = document.getElementById('usersContainer');
 
@@ -609,7 +609,7 @@ async function fetchGroupsForHistory() {
     }
 }
 
-// Miembros de grupo
+// miembros de grupo
 async function loadGroupMembers() {
     const group = document.getElementById('groupName').value;
     const statusDiv = document.getElementById('groupStatus');
@@ -723,7 +723,7 @@ function attachRemoteStream(stream) {
 
 function startRing(from) {
     if (!ringAudio) {
-        // coloca ring.mp3 en la raíz de web-app o en /public y usa esta ruta
+        
         ringAudio = new Audio('./ring.mp3');
         ringAudio.loop = true;
     }
@@ -734,7 +734,7 @@ function startRing(from) {
     if (incoming) {
         incoming.style.display = 'flex';
         incoming.innerHTML = `
-            📞 Llamada entrante de <strong>${from}</strong>
+            Llamada entrante de <strong>${from}</strong>
             <button class="btn" onclick="acceptCall('${from}')">Contestar</button>
             <button class="btn" style="background:#dc3545" onclick="rejectCall('${from}')">Rechazar</button>
         `;

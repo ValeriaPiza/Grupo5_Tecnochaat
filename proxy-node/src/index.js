@@ -476,14 +476,14 @@ app.post("/api/audio/upload", upload.single("audio"), async (req, res) => {
 });
 
 
-// 8c. Descargar/servir audio histórico
+//descargar/servir audio histórico
 app.get('/api/audio/download', async (req, res) => {
     try {
         const { file } = req.query;
         if (!file) {
             return res.status(400).json({ success: false, error: 'file requerido' });
         }
-        // Archivos se guardan en backend-java/audio_history (ruta absoluta segura)
+        //archivos se guardan en backend-java/audio_history (ruta absoluta segura)
         const audioPath = path.join(__dirname, '..', '..', 'backend-java', 'audio_history', file);
         return res.sendFile(audioPath, (err) => {
             if (err) {
@@ -499,7 +499,7 @@ app.get('/api/audio/download', async (req, res) => {
     }
 });
 
-// 9. Historial del grupo
+//historial del grupo
 app.get('/api/history/group', async (req, res) => {
     try {
         const { group } = req.query;
@@ -536,7 +536,7 @@ app.get('/api/history/group', async (req, res) => {
     }
 });
 
-// 7. ENDPOINT (Health Check)
+
 app.get('/api/health', (req, res) => {
     res.json({
         success: true,
@@ -550,7 +550,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// 8. Este es el manejo de errores global 
+//es el manejo de errores global 
 app.use((err, req, res, next) => {
     console.error(' Error no manejado:', err);
     res.status(500).json({
