@@ -1,0 +1,12 @@
+# Normalizar fines de línea
+*.js text eol=lf
+*.html text eol=lf  
+*.css text eol=lf
+*.json text eol=lf
+*.java text eol=lf
+
+# Archivos binarios que no deben ser modificados
+*.jar binary
+*.class binary
+*.png binary
+*.jpg binary

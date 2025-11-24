@@ -1,0 +1,66 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        /////////////////////////////////////////////
+        // 1. BACKEND JAVA (Gradle / Ice)
+        /////////////////////////////////////////////
+        {
+            "type": "java",
+            "name": "Debug Backend Java (Server)",
+            "request": "launch",
+            "mainClass": "com.tecnochat.server.Server",
+            "cwd": "${workspaceFolder}/backend-java",
+            "console": "integratedTerminal"
+        },
+        /////////////////////////////////////////////
+        // 2. PROXY-NODE (Express + Ice client)
+        /////////////////////////////////////////////
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Proxy Node",
+            "program": "${workspaceFolder}/proxy-node/src/index.js",
+            "cwd": "${workspaceFolder}/proxy-node",
+            "runtimeExecutable": "node",
+            "console": "integratedTerminal",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "env": {
+                "NODE_ENV": "development"
+            }
+        },
+        /////////////////////////////////////////////
+        // 3. WEB-APP (Webpack Dev Server)
+        /////////////////////////////////////////////
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Web App (Webpack Dev Server)",
+            "program": "${workspaceFolder}/web-app/node_modules/webpack-dev-server/bin/webpack-dev-server.js",
+            "args": [
+                "--mode",
+                "development"
+            ],
+            "cwd": "${workspaceFolder}/web-app",
+            "runtimeExecutable": "node",
+            "console": "integratedTerminal",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+    ],
+    ///////////////////////////////////////////////
+    // 4. COMPOUND DEBUG: Arrancar todo junto
+    ///////////////////////////////////////////////
+    "compounds": [
+        {
+            "name": "Debug Everything (Java + Proxy + WebApp)",
+            "configurations": [
+                "Debug Backend Java (Server)",
+                "Debug Proxy Node",
+                "Debug Web App (Webpack Dev Server)"
+            ]
+        }
+    ]
+}
