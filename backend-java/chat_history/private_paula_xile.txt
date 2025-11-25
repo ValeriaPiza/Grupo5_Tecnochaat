@@ -1,0 +1,5 @@
+[2025-11-24 12:50:04] xile -> paula: [LLAMADA: webrtc_offer]
+[2025-11-24 12:50:11] paula -> xile: [LLAMADA: webrtc_hangup]
+[2025-11-24 12:50:14] xile -> paula: [LLAMADA: webrtc_offer]
+[2025-11-24 12:50:17] paula -> xile: [LLAMADA: webrtc_answer]
+[2025-11-24 12:50:35] xile -> paula: [LLAMADA: webrtc_hangup]

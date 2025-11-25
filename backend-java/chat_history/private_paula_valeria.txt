@@ -1,0 +1,6 @@
+[2025-11-25 17:25:36] paula -> valeria: hola vale como estas?
+[2025-11-25 17:27:17] paula -> valeria: [LLAMADA: webrtc_offer]
+[2025-11-25 17:27:33] valeria -> paula: [LLAMADA: webrtc_answer]
+[2025-11-25 17:28:11] paula -> valeria: [LLAMADA: webrtc_hangup]
+[2025-11-25 17:28:26] paula -> valeria: [AUDIO: private_paula_valeria_2025-11-25_17-28-26_1764109706049_priv_audio_1764109706017.webm]
+[2025-11-25 17:29:44] paula -> valeria: [AUDIO: private_paula_valeria_2025-11-25_17-29-44_1764109784371_priv_audio_1764109784349.webm]
