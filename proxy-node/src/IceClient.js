@@ -149,7 +149,7 @@ class IceClient {
         });
     }
 
-    // helpers
+    // ========== Helpers ==========
     _stringToProxy(identity) {
         const proxyStr = `${identity}:default -h ${this.host} -p ${this.port}`;
         return this.communicator.stringToProxy(proxyStr);

@@ -1,8 +1,6 @@
-const PROXY_URL =
-    window.APP_PROXY_URL ||
-    import.meta.env?.VITE_PROXY_URL ||
-    'http://localhost:3002';
-
+const PROXY_URL = 'http://localhost:3002';
+const WS_URL = 'ws://localhost:3002';
+let ws = null;
 let currentUser = localStorage.getItem('tecnochat_username') || '';
 let knownGroups = JSON.parse(localStorage.getItem('tecnochat_groups') || '[]');
 let activeCallUser = null;
@@ -19,6 +17,61 @@ const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 let mediaRecorder = null;
 let recordedChunks = [];
 
+// Conexión WebSocket para actualizaciones en tiempo real (chat, audio, señales RTC)
+function connectWebSocket() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+    if (!currentUser) {
+        return;
+    }
+    try {
+        ws = new WebSocket(WS_URL);
+
+        ws.onopen = () => {
+            console.log('WebSocket conectado al proxy');
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (!data || !data.type) return;
+
+                if (data.type === 'chat-message') {
+                    handleIncomingChatMessage(data);
+                } else if (data.type === 'audio-note') {
+                    handleIncomingAudioNote(data);
+                } else if (data.type === 'rtc-signal') {
+                    // Señalización de llamada (WebRTC) recibida por WebSocket
+                    if (data.to === currentUser) {
+                        handleRtcSignal({
+                            from: data.from,
+                            type: data.signalType,
+                            payload: data.payload
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error('Error procesando mensaje WebSocket:', err);
+            }
+        };
+
+        ws.onclose = () => {
+            console.log('WebSocket cerrado');
+            if (currentUser) {
+                setTimeout(connectWebSocket, 3000);
+            }
+        };
+
+        ws.onerror = (err) => {
+            console.error('Error en WebSocket:', err);
+        };
+    } catch (err) {
+        console.error('No se pudo abrir WebSocket:', err);
+    }
+}
+
+
 function normalizeDescription(desc) {
     if (!desc) return null;
     if (typeof desc === 'object' && desc.type && desc.sdp) {
@@ -27,7 +80,7 @@ function normalizeDescription(desc) {
     return null;
 }
 
-// navegación entre secciones
+// Navegación entre secciones
 function showSection(sectionId, evt) {
     document.querySelectorAll('.section').forEach(section => {
         section.classList.remove('active');
@@ -128,17 +181,26 @@ async function sendAudioNote(blob) {
     }
 
     try {
-        const formData = new FormData();
-        formData.append("to", recipient);
-        formData.append("from", currentUser);
-        formData.append("isGroup", String(type === "group"));
-        formData.append("audio", blob, `audio_${Date.now()}.webm`);
+        const arrayBuffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        const filename = `audio_${Date.now()}.webm`;
 
         const res = await fetch(`${PROXY_URL}/api/audio/upload`, {
-            method: "POST",
-            body: formData
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: recipient,
+                from: currentUser,
+                isGroup: type === 'group',
+                filename,
+                data: base64
+            })
         });
-
         const result = await res.json();
         if (result.success) {
             showStatus(`Nota de audio enviada a ${recipient}`, 'success', statusDiv);
@@ -149,7 +211,6 @@ async function sendAudioNote(blob) {
     } catch (err) {
         showStatus('Error enviando audio: ' + err.message, 'error', statusDiv);
     }
-
 }
 
 function setUsername() {
@@ -157,7 +218,7 @@ function setUsername() {
     const status = document.getElementById('usernameStatus');
     const btn = document.getElementById('connectBtn');
 
-    // si ya hay sesión, desconecta
+    // Si ya hay sesión, desconecta
     if (currentUser) {
         status.textContent = `Desconectando...`;
         fetch(`${PROXY_URL}/api/logout`, {
@@ -196,6 +257,7 @@ function setUsername() {
             input.disabled = true;
             if (btn) btn.textContent = 'Desconectar';
             loadOnlineUsers(); // refrescar lista
+            connectWebSocket();
             startSignalPolling();
         } else {
             status.textContent = `No se pudo conectar: ${result.error || 'desconocido'}`;
@@ -214,7 +276,7 @@ function setUsername() {
       });
 }
 
-// cambiar etiquetas según tipo de mensaje
+// Cambiar etiquetas según tipo de mensaje
 document.getElementById('messageType').addEventListener('change', function () {
     const type = this.value;
     const label = document.getElementById('recipientLabel');
@@ -241,7 +303,7 @@ document.getElementById('messageType').addEventListener('change', function () {
     }
 });
 
-// cambiar etiquetas en historial
+// Cambiar etiquetas en historial
 function toggleHistoryInput() {
     const type = document.getElementById('historyType').value;
     const label = document.getElementById('historyLabel');
@@ -256,7 +318,7 @@ function toggleHistoryInput() {
     }
 }
 
-// enviar mensaje
+// Enviar mensaje
 async function sendMessage(e) {
     const type = document.getElementById('messageType').value;
     const recipient = type === 'private'
@@ -304,7 +366,7 @@ async function sendMessage(e) {
     }
 }
 
-// crear grupo
+// Crear grupo
 async function createGroup() {
     const groupName = document.getElementById('groupName').value;
     const groupMembers = document.getElementById('groupMembers').value;
@@ -350,7 +412,7 @@ async function createGroup() {
     }
 }
 
-// cargar historial
+// Cargar historial
 async function loadHistory() {
     const type = document.getElementById('historyType').value;
     const input = document.getElementById('historySelect').value;
@@ -390,7 +452,7 @@ async function loadHistory() {
             cleaned.forEach(item => {
                 const isAudio = item.includes('[AUDIO:');
                 if (isAudio) {
-                    //espera entradas tipo "[AUDIO: <filename>]"
+                    // Espera entradas tipo "[AUDIO: <filename>]"
                     const match = item.match(/\[AUDIO:\s*([^\]]+)\]/i);
                     const filename = match ? match[1].trim() : null;
                     html += `<div class="message audio">${item}`;
@@ -411,7 +473,45 @@ async function loadHistory() {
     }
 }
 
-// cargar feed de mensajes recientes para el chat actual
+// Cargar feed de mensajes recientes para el chat actual
+function handleIncomingChatMessage(data) {
+    const feed = document.getElementById('messageFeed');
+    if (!feed) return;
+    if (!currentUser) return;
+
+    const typeSelect = document.getElementById('messageType');
+    const currentType = typeSelect ? typeSelect.value : 'private';
+    const currentRecipient = currentType === 'private'
+        ? (document.getElementById('recipientSelect')?.value || '')
+        : (document.getElementById('recipientGroupSelect')?.value || document.getElementById('recipientInput')?.value || '');
+
+    if (data.scope === 'private') {
+        const involvesMe = (data.to === currentUser || data.from === currentUser);
+        const matchesRecipient = !currentRecipient || data.to === currentRecipient || data.from === currentRecipient;
+        if (!involvesMe || !matchesRecipient) return;
+    } else if (data.scope === 'group') {
+        if (currentType !== 'group') return;
+        if (currentRecipient && data.group !== currentRecipient) return;
+    }
+
+    // Recargamos el historial del chat actual para incluir el nuevo mensaje
+    loadMessageFeed();
+}
+
+function handleIncomingAudioNote(data) {
+    const statusDiv = document.getElementById('chatStatus');
+    if (data.scope === 'private') {
+        if (data.to === currentUser) {
+            showStatus(`Nueva nota de audio de ${data.from}`, 'success', statusDiv);
+        }
+    } else if (data.scope === 'group') {
+        showStatus(`Nueva nota de audio en grupo ${data.group}`, 'success', statusDiv);
+    }
+    handleIncomingChatMessage(data);
+}
+
+
+// Cargar feed de mensajes recientes para el chat actual
 async function loadMessageFeed() {
     const feed = document.getElementById('messageFeed');
     const type = document.getElementById('messageType')?.value || 'private';
@@ -460,7 +560,7 @@ async function loadMessageFeed() {
     }
 }
 
-// cargar usuarios conectados
+// Cargar usuarios conectados
 async function loadOnlineUsers() {
     const container = document.getElementById('usersContainer');
 
@@ -613,7 +713,7 @@ async function fetchGroupsForHistory() {
     }
 }
 
-// miembros de grupo
+// Miembros de grupo
 async function loadGroupMembers() {
     const group = document.getElementById('groupName').value;
     const statusDiv = document.getElementById('groupStatus');
@@ -727,7 +827,7 @@ function attachRemoteStream(stream) {
 
 function startRing(from) {
     if (!ringAudio) {
-        
+        // coloca ring.mp3 en la raíz de web-app o en /public y usa esta ruta
         ringAudio = new Audio('./ring.mp3');
         ringAudio.loop = true;
     }
@@ -738,7 +838,7 @@ function startRing(from) {
     if (incoming) {
         incoming.style.display = 'flex';
         incoming.innerHTML = `
-            Llamada entrante de <strong>${from}</strong>
+            📞 Llamada entrante de <strong>${from}</strong>
             <button class="btn" onclick="acceptCall('${from}')">Contestar</button>
             <button class="btn" style="background:#dc3545" onclick="rejectCall('${from}')">Rechazar</button>
         `;
@@ -1043,6 +1143,7 @@ document.addEventListener('DOMContentLoaded', function () {
     localStorage.clear();
     currentUser = '';
     knownGroups = [];
+    connectWebSocket();
     activeCallUser = null;
 
     document.querySelectorAll('.nav button').forEach(button => {

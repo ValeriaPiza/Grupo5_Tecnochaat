@@ -78,8 +78,7 @@ Desde la raíz del repo:
 - Proxy HTTP (Node):
   - `cd proxy-node`
   - `npm install`
-  - `npm install multer` (si no lo tienes, esto es para el envio de audios)
-  - `npm run start` (ICE_HOST=localhost ICE_PORT=10000 PORT=3002)
+  - `ICE_HOST=localhost ICE_PORT=10000 PORT=3002 npm run start`
 - Cliente Web:
   - `cd web-app`
   - `npm install`

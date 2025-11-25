@@ -3,7 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import IceClient from './IceClient.js';
-import multer from "multer";
+import http from 'http';
+import { WebSocketServer } from 'ws';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,10 +15,26 @@ const PORT = parseInt(process.env.PORT || '3002', 10);
 const ICE_HOST = process.env.ICE_HOST || 'localhost';
 const ICE_PORT = parseInt(process.env.ICE_PORT || '10000', 10);
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+wss.on('connection', (ws) => {
+    console.log(' Cliente WebSocket conectado');
+    ws.on('close', () => {
+        console.log(' Cliente WebSocket desconectado');
+    });
 });
+
+function broadcast(payload) {
+    if (!wss) return;
+    const data = JSON.stringify(payload);
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1) {
+            client.send(data);
+        }
+    });
+}
+
 
 app.use(cors());
 app.use(express.json());
@@ -29,6 +46,8 @@ iceClient.connect().then(() => {
 }).catch(err => {
     console.error('Error conectando cliente Ice:', err);
 });
+
+
 
 
 // ENDPOINTS TECNOCHAT
@@ -112,6 +131,14 @@ app.post('/api/messages/private', async (req, res) => {
         await iceClient.sendMessage(sender, to, message);
 
         console.log(' Mensaje privado enviado exitosamente');
+        broadcast({
+            type: 'chat-message',
+            scope: 'private',
+            from: sender,
+            to,
+            message,
+            timestamp: new Date().toISOString()
+        });
 
         res.json({
             success: true,
@@ -129,6 +156,7 @@ app.post('/api/messages/private', async (req, res) => {
         });
     }
 });
+
 
 // 3. ENVIAR MENSAJE A GRUPO
 app.post('/api/messages/group', async (req, res) => {
@@ -153,6 +181,14 @@ app.post('/api/messages/group', async (req, res) => {
         await iceClient.sendGroupMessage(sender, group, message);
 
         console.log(' Mensaje grupal enviado exitosamente');
+        broadcast({
+            type: 'chat-message',
+            scope: 'group',
+            from: sender,
+            group,
+            message,
+            timestamp: new Date().toISOString()
+        });
 
         res.json({
             success: true,
@@ -170,6 +206,7 @@ app.post('/api/messages/group', async (req, res) => {
         });
     }
 });
+
 
 // 4. INICIAR LLAMADA
 app.post('/api/calls/start', async (req, res) => {
@@ -242,7 +279,23 @@ app.post('/api/webrtc/signal', async (req, res) => {
             });
         }
 
-        await iceClient.sendRtcSignal(sender, to, type, typeof data === 'string' ? data : JSON.stringify(data ?? {}));
+        await iceClient.sendRtcSignal(
+            sender,
+            to,
+            type,
+            typeof data === 'string' ? data : JSON.stringify(data ?? {})
+        );
+
+        // Enviar también al navegador destino por WebSocket
+        broadcast({
+            type: 'rtc-signal',
+            from: sender,
+            to,
+            signalType: type,
+            payload: data,
+            timestamp: new Date().toISOString()
+        });
+
         res.json({ success: true });
     } catch (error) {
         console.error(' Error enviando señal WebRTC:', error);
@@ -252,6 +305,7 @@ app.post('/api/webrtc/signal', async (req, res) => {
         });
     }
 });
+
 
 // 5c. Señalización WebRTC: obtener señales pendientes para usuario
 app.get('/api/webrtc/signals', async (req, res) => {
@@ -441,49 +495,53 @@ app.get('/api/history/private', async (req, res) => {
     }
 });
 
-// audios usando formdata y multer
-app.post("/api/audio/upload", upload.single("audio"), async (req, res) => {
-  try {
-    const { to, from, isGroup } = req.body;
-    const sender = from || req.headers["x-username"] || "WebCliente";
+// 8b. Subir nota de audio (base64) para guardarla en backend
+app.post('/api/audio/upload', async (req, res) => {
+    try {
+        const { to, from, isGroup, filename, data } = req.body;
+        const sender = from || req.headers['x-username'] || 'WebCliente';
 
-    if (!to || !req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "Parámetros requeridos: to, audio"
-      });
+        if (!to || !data) {
+            return res.status(400).json({ success: false, error: 'Parámetros requeridos: to, data' });
+        }
+
+        const buffer = Buffer.from(data, 'base64');
+        const ok = await iceClient.sendAudio(
+            sender,
+            to,
+            !!isGroup,
+            filename || 'audio.webm',
+            new Uint8Array(buffer)
+        );
+
+        if (ok) {
+            broadcast({
+                type: 'audio-note',
+                scope: isGroup ? 'group' : 'private',
+                from: sender,
+                to,
+                group: isGroup ? to : undefined,
+                filename: filename || 'audio.webm',
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        res.json({ success: ok });
+    } catch (error) {
+        console.error(' Error subiendo nota de audio:', error);
+        res.status(500).json({ success: false, error: error.message || 'No se pudo subir audio' });
     }
-
-    const bytes = new Uint8Array(req.file.buffer);
-    const filename = req.file.originalname || "audio.webm";
-
-    const ok = await iceClient.sendAudio(
-      sender,
-      to,
-      isGroup === "true" || isGroup === true,
-      filename,
-      bytes
-    );
-
-    res.json({ success: ok });
-  } catch (error) {
-    console.error(" Error subiendo nota de audio:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message || "No se pudo subir audio"
-    });
-  }
 });
 
 
-//descargar/servir audio histórico
+// 8c. Descargar/servir audio histórico
 app.get('/api/audio/download', async (req, res) => {
     try {
         const { file } = req.query;
         if (!file) {
             return res.status(400).json({ success: false, error: 'file requerido' });
         }
-        //archivos se guardan en backend-java/audio_history (ruta absoluta segura)
+        // Archivos se guardan en backend-java/audio_history (ruta absoluta segura)
         const audioPath = path.join(__dirname, '..', '..', 'backend-java', 'audio_history', file);
         return res.sendFile(audioPath, (err) => {
             if (err) {
@@ -499,7 +557,7 @@ app.get('/api/audio/download', async (req, res) => {
     }
 });
 
-//historial del grupo
+// 9. Historial del grupo
 app.get('/api/history/group', async (req, res) => {
     try {
         const { group } = req.query;
@@ -536,7 +594,7 @@ app.get('/api/history/group', async (req, res) => {
     }
 });
 
-
+// 7. ENDPOINT (Health Check)
 app.get('/api/health', (req, res) => {
     res.json({
         success: true,
@@ -550,7 +608,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-//es el manejo de errores global 
+// 8. Este es el manejo de errores global 
 app.use((err, req, res, next) => {
     console.error(' Error no manejado:', err);
     res.status(500).json({
@@ -560,7 +618,9 @@ app.use((err, req, res, next) => {
     });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Proxy HTTP  en http://localhost:${PORT}`);
     console.log(`Conectando via Ice al servidor Java en ${ICE_HOST}:${ICE_PORT}`);
 });
+
+
