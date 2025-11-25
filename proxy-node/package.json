@@ -1,0 +1,20 @@
+{
+  "name": "tecnochat-proxy",
+  "version": "1.0.0",
+  "description": "Proxy HTTP/WebSocket para TecnoChat conectado al servidor Java via ZeroC Ice",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "ice": "^3.7.100",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TecnoChat Web</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 5px;
+        }
+
+        .nav {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .nav button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .nav button:hover {
+            background: #e9ecef;
+        }
+
+        .nav button.active {
+            background: #007bff;
+            color: white;
+        }
+
+        .content {
+            padding: 20px;
+            min-height: 400px;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,123,255,0.3);
+        }
+
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .history-container {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .message {
+            background: white;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+
+        .message.audio {
+            border-left-color: #28a745;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .chat-feed {
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fdfdfd;
+        }
+
+        .users-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .user-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s;
+        }
+
+        .user-card:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+        }
+
+        .recipient-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .recipient-row .btn.ghost {
+            padding: 10px 14px;
+            background: #f1f3f5;
+            color: #495057;
+            border: 1px solid #e9ecef;
+        }
+
+        .recipient-row .btn.ghost:hover {
+            background: #e9ecef;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .history-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .call-users {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .call-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #fff;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+        }
+
+        .call-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-icon {
+            border: none;
+            border-radius: 8px;
+            padding: 8px 10px;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            transition: opacity 0.2s;
+        }
+
+        .btn-icon:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-call {
+            background: #28a745;
+        }
+
+        .btn-hang {
+            background: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> TecnoChat Web</h1>
+            <p>Comunicación en tiempo real</p>
+            <div style="margin-top:10px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <input type="text" id="usernameInput" placeholder="Ingresa tu nombre" style="padding:8px 12px; border-radius:8px; border:2px solid #e9ecef; min-width:180px;">
+                <button class="btn" id="connectBtn" onclick="setUsername()">Conectar</button>
+                <span id="usernameStatus" style="color:#fff; font-weight:600;"></span>
+            </div>
+        </div>
+
+        <div class="nav">
+            <button data-section="chat" class="active">Chat</button>
+            <button data-section="groups">Grupos</button>
+            <button data-section="history">Historial</button>
+            <button data-section="calls">Llamadas</button>
+            <button data-section="users">Usuarios</button>
+        </div>
+
+        <div class="content">
+            
+            <div id="chat" class="section active">
+                <h2>Enviar Mensaje</h2>
+                <div class="form-group">
+                    <label>Tipo de mensaje:</label>
+                    <select id="messageType">
+                        <option value="private">Privado</option>
+                        <option value="group">Grupal</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label id="recipientLabel">Para (Usuario):</label>
+                    <div class="recipient-row" id="recipientRow">
+                        <select id="recipientSelect">
+                            <option value="">Selecciona un usuario conectado</option>
+                        </select>
+                        <button class="btn ghost" type="button" onclick="refreshRecipients()">↻</button>
+                    </div>
+                    <div class="recipient-row" id="groupRow" style="display:none;">
+                        <select id="recipientGroupSelect">
+                            <option value="">Selecciona un grupo</option>
+                        </select>
+                        <button class="btn ghost" type="button" onclick="refreshGroupsChat()">↻</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Mensaje:</label>
+                    <textarea id="messageText" rows="3" placeholder="Escribe tu mensaje..."></textarea>
+                </div>
+                <button class="btn" onclick="sendMessage()"> Enviar Mensaje</button>
+                <div style="margin:10px 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                    <button class="btn" id="audioRecordBtn" onclick="startAudioRecording()">🎤 Grabar nota de audio</button>
+                    <button class="btn" id="audioStopBtn" onclick="stopAndSendAudio()" disabled>Detener y enviar</button>
+                    <span id="audioStatus" style="color:#495057;"></span>
+                </div>
+                <div id="chatStatus"></div>
+                <div style="margin-top:10px;">
+                    <h3>Mensajes recientes</h3>
+                    <div id="messageFeed" class="chat-feed">
+                        <div class="status">Sin mensajes</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sección Grupos -->
+            <div id="groups" class="section">
+                <h2>Gestión de Grupos</h2>
+                <div class="form-group">
+                    <label>Nombre del grupo:</label>
+                    <input type="text" id="groupName" placeholder="Nombre del nuevo grupo">
+                </div>
+                <div class="form-group">
+                    <label>Miembros del grupo:</label>
+                    <input type="text" id="groupMembers" placeholder="Miembros del grupo separado por coma">
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn" onclick="createGroup()">Crear Grupo</button>
+                    <button class="btn" onclick="loadGroupMembers()">Ver miembros</button>
+                    <button class="btn" onclick="loadGroupsList()">Ver grupos</button>
+                </div>
+                <div id="groupStatus"></div>
+                <div id="groupsList" class="history-container" style="max-height:200px; margin-top:10px;"></div>
+            </div>
+
+            <!-- Sección Historial -->
+            <div id="history" class="section">
+                <h2>Historial de Mensajes</h2>
+                <div class="form-group">
+                    <label>Tipo:</label>
+                    <select id="historyType" onchange="toggleHistoryInput()">
+                        <option value="private">Privado</option>
+                        <option value="group">Grupal</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label id="historyLabel">Usuario:</label>
+                    <div class="recipient-row">
+                        <select id="historySelect">
+                            <option value="">Selecciona un usuario</option>
+                        </select>
+                        <button class="btn ghost" type="button" onclick="refreshHistoryOptions()">↻</button>
+                    </div>
+                </div>
+                <button class="btn" onclick="loadHistory()"> Cargar Historial</button>
+                <div id="historyContainer" class="history-container"></div>
+            </div>
+
+            <!-- Sección Usuarios -->
+            <div id="users" class="section">
+                <h2>Usuarios Conectados</h2>
+                <button class="btn" onclick="loadOnlineUsers()"> Actualizar Lista</button>
+                <div id="usersContainer" class="users-list"></div>
+            </div>
+
+            <!-- Sección Llamadas -->
+            <div id="calls" class="section">
+                <h2>Llamadas</h2>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+                    <button class="btn" onclick="loadCallUsers()">Actualizar usuarios</button>
+                    <span id="callHint" style="color:#495057;">Selecciona un usuario para llamar o colgar</span>
+                </div>
+                <div id="incomingCall" class="status" style="display:none; align-items:center; gap:10px;"></div>
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                    <div id="callTimer" style="font-weight:600; color:#495057; display:none;">Duración: 00:00</div>
+                    <button class="btn" id="callHangBtn" style="display:none; background:#dc3545;">Colgar</button>
+                </div>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                    <audio id="localAudio" autoplay muted style="display:none;"></audio>
+                    <audio id="remoteAudio" autoplay style="display:none;"></audio>
+                </div>
+                <div id="callUsersContainer" class="call-users"></div>
+                <div id="callStatus"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="index.js"></script>
+</body>
+</html>

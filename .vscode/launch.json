@@ -1,28 +1,66 @@
 {
-    // Use IntelliSense para saber los atributos posibles.
-    // Mantenga el puntero para ver las descripciones de los existentes atributos.
-    // Para más información, visite: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        /////////////////////////////////////////////
+        // 1. BACKEND JAVA (Gradle / Ice)
+        /////////////////////////////////////////////
         {
             "type": "java",
-            "name": "Client",
+            "name": "Debug Backend Java (Server)",
             "request": "launch",
-            "mainClass": "Client.Client",
-            "projectName": ""
+            "mainClass": "com.tecnochat.server.Server",
+            "cwd": "${workspaceFolder}/backend-java",
+            "console": "integratedTerminal"
         },
+        /////////////////////////////////////////////
+        // 2. PROXY-NODE (Express + Ice client)
+        /////////////////////////////////////////////
         {
-            "type": "java",
-            "name": "Server",
+            "type": "node",
             "request": "launch",
-            "mainClass": "Server.Server",
-            "projectName": ""
+            "name": "Debug Proxy Node",
+            "program": "${workspaceFolder}/proxy-node/src/index.js",
+            "cwd": "${workspaceFolder}/proxy-node",
+            "runtimeExecutable": "node",
+            "console": "integratedTerminal",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "env": {
+                "NODE_ENV": "development"
+            }
         },
+        /////////////////////////////////////////////
+        // 3. WEB-APP (Webpack Dev Server)
+        /////////////////////////////////////////////
         {
-            "type": "java",
-            "name": "Current File",
+            "type": "node",
             "request": "launch",
-            "mainClass": "${file}"
+            "name": "Debug Web App (Webpack Dev Server)",
+            "program": "${workspaceFolder}/web-app/node_modules/webpack-dev-server/bin/webpack-dev-server.js",
+            "args": [
+                "--mode",
+                "development"
+            ],
+            "cwd": "${workspaceFolder}/web-app",
+            "runtimeExecutable": "node",
+            "console": "integratedTerminal",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        }
+    ],
+    ///////////////////////////////////////////////
+    // 4. COMPOUND DEBUG: Arrancar todo junto
+    ///////////////////////////////////////////////
+    "compounds": [
+        {
+            "name": "Debug Everything (Java + Proxy + WebApp)",
+            "configurations": [
+                "Debug Backend Java (Server)",
+                "Debug Proxy Node",
+                "Debug Web App (Webpack Dev Server)"
+            ]
         }
     ]
 }

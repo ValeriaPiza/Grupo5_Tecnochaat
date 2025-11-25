@@ -1,2 +1,0 @@
-[2025-11-10 20:41:09] WebCliente -> valeria: hola valeria como estas
-[2025-11-10 20:41:45] WebCliente -> valeria: hola vale

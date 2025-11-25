@@ -19,11 +19,11 @@ El sistema está formado por tres partes principales que trabajan juntas:
 
 - Backend Java (Servidor Principal)
 Es el encargado de manejar toda la lógica del chat.
-Se comunica directamente con los clientes mediante sockets y se ocupa de distribuir los mensajes, mantener el historial y gestionar los grupos.
+Se comunica con clientes TCP y expone servicios RPC mediante ZeroC Ice. Se ocupa de distribuir los mensajes, mantener el historial y gestionar los grupos.
 
 - Servidor Proxy HTTP (Node.js + Express)
 Este componente funciona como un puente entre el cliente web y el servidor Java.
-Recibe las peticiones del navegador y las traduce a mensajes que el servidor de Java puede entender.
+Recibe las peticiones del navegador y las traduce a llamadas RPC (Ice) hacia el backend Java.
 También devuelve las respuestas del servidor al navegador.
 
 - Cliente Web (Interfaz de Usuario)
@@ -34,9 +34,9 @@ Desde aquí los usuarios pueden conectarse, escribir mensajes, ver el chat en ti
 
 El cliente web envía un mensaje o una acción al proxy usando HTTP.
 
-El proxy (Node.js) traduce esa información y la envía por sockets al backend en Java.
+El proxy (Node.js) traduce esa información y la envía por RPC (ZeroC Ice) al backend en Java (servicios `ChatService` y `CallService`).
 
-El servidor Java procesa el mensaje y lo distribuye a los usuarios correspondientes (grupal, privado o por grupo).
+El servidor Java procesa el mensaje y lo distribuye a los usuarios correspondientes (grupal, privado o por grupo), además de exponer historiales, creación de grupos y llamadas.
 
 La respuesta regresa al proxy, que la entrega de nuevo al cliente web.
 
@@ -45,65 +45,62 @@ Finalmente, el navegador actualiza la interfaz del chat en tiempo real.
 ## Requisitos Previos
 
 - Java JDK 23 o superior
-- Gradle
+- Gradle instalado (o usa el wrapper `./gradlew` tras generar el wrapper con `gradle wrapper`)
+- ZeroC Ice 3.7 para Java, incluyendo la herramienta `slice2java` disponible en el PATH
+- ZeroC Ice para Node.js (paquete npm `ice`) y, si necesitas generar stubs adicionales, `slice2js` en el PATH
 - Node.js (v18 o superior)
 - npm
 - Navegador web moderno
+- https://www.zeroc.com/ice/downloads/3.7/java 
+
+## Comandos útiles
+
+- `./gradlew slice`  
+  Genera/actualiza los stubs Java de Ice (corre `slice2java` sobre `backend-java/src/main/ice` y escribe en `backend-java/src/main/generated/TecnoChat/`). Ejecútalo siempre que modifiques las interfaces `.ice` antes de compilar o levantar el backend.
 
 
 ## Instrucciones para Ejecutar el Sistema
 
-Para que todo funcione correctamente, necesitamos ejecutar los tres componentes al mismo tiempo, cada uno en una terminal diferente.
+### Arranque rápido con script
+Desde la raíz del repo:
+1. Da permisos si es necesario: `chmod +x start-local.sh`
+2. Ejecuta: `./start-local.sh` (en Windows, usar Git Bash o WSL; en PowerShell/CMD puedes correr `bash start-local.sh` si tienes bash disponible)
+   - Levanta backend Java (`runServer`) en puerto TCP 6789 e Ice en 10000.
+   - Levanta proxy-node en puerto 3002 usando Ice (host/puerto configurables con `ICE_HOST` y `ICE_PORT`).
+   - Levanta web-app (webpack dev server, usualmente en http://localhost:8080).
+3. Detén todo con `kill <PIDs>` que el script imprime o `pkill -f "com.tecnochat.server.Server" node webpack`.
 
-primero ejecutamos  "gradle buil" para ver que todo este funcionando bien
-
-- Terminal 1 — Backend Java
-
-Primero ejecutamos el servidor principal, que maneja las conexiones y los mensajes del chat usando el comando: 
- "java -cp build/classes/java/main Server.Server"
-
-- Terminal 2 — Proxy HTTP
-
-Luego iniciamos el proxy, que conecta el backend con el cliente web con el comando:
-
-"node .\proxy\index.js"
-
-
-Antes de eso, si es la primera vez, instalamos las dependencias con:
-
-"npm install" 
-
--  Terminal 3 — Cliente Web
-
-Finalmente, ejecutamos la interfaz web del chat, que se abrirá en el navegador.
-
-- npm run frontend
-
-Cuando se cargue, aparecerá algo como esto en la consola:
-
-[i] [webpack-dev-server] On Your Network (IPv4): http://192.168.1.8:8080/
-
-
-Abrimos ese enlace en el navegador, ingresamos nuestro nombre de usuario y ya podemos empezar a chatear con las demás personas conectadas.
+### Arranque manual
+- Backend Java:
+  - `cd backend-java`
+  - `./gradlew build`
+  - `./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
+- Proxy HTTP (Node):
+  - `cd proxy-node`
+  - `npm install`
+  - `ICE_HOST=localhost ICE_PORT=10000 PORT=3002 npm run start`
+- Cliente Web:
+  - `cd web-app`
+  - `npm install`
+  - `npm run dev` (abre http://localhost:8080)
 
 ## Funcionalidades Principales
 
-- Chat en tiempo real:
-Todos los usuarios conectados pueden enviarse mensajes instantáneamente. Cada mensaje se distribuye a los demás clientes sin necesidad de recargar la página.
+- Chat en tiempo real: mensajes privados y de grupo distribuidos al instante.
+- Grupos: creación y mensajería grupal, validando miembros.
+- Historial: consulta de conversaciones privadas y de grupo.
+- Lista de usuarios conectados: visibilidad de quién está disponible.
+- Desconexión segura: logout sin afectar a otros usuarios.
+- Llamadas de audio (WebRTC): señalización vía Ice/HTTP; el navegador establece WebRTC (STUN público configurado en el front) y el backend almacena/entrega la señalización.
+- Notas de audio (web): se graban en el navegador y se suben al backend vía proxy/Ice; se guardan en `audio_history` y quedan registradas en el historial.
 
-- Mensajes privados:
-Podemos conversar directamente con otra persona de manera individual, sin que los demás vean la conversación.
+## Nota sobre audio y backend
+- El backend Java/Ice solo transporta señalización de llamadas; el audio de las llamadas sigue siendo P2P WebRTC entre navegadores.
+- Las notas de audio sí pasan por el backend: se reciben vía `sendAudio`, se guardan en disco y se registran en el historial.
 
-- Grupos:
-Tenemos la opción de crear grupos y enviar mensajes dentro de ellos.
-El sistema valida que no se creen grupos vacíos, es decir, solo se permite crear un grupo si hay participantes disponibles.
-
-- Historial de mensajes:
-Podemos consultar los mensajes anteriores tanto de conversaciones individuales como de grupos.
-En la interfaz hay una cajita o espacio de selección donde escogemos si queremos ver el historial de un usuario o de un grupo, y luego escribimos el nombre correspondiente para cargarlo.
-
-- Lista de usuarios conectados:
-El sistema muestra en todo momento las personas que están conectadas al chat, para saber con quiénes se puede conversar o crear grupos.
-
-- Desconexión segura:
-Cada usuario puede salir del chat de forma segura sin afectar la comunicación de los demás.
+### Por qué no hay “llamada” por RPC/Ice y se usa WebRTC
+- Ice/RPC en este proyecto solo mueve datos discretos (mensajes, señalización). No hay un canal de transporte en tiempo real para audio: `ChatService`/`CallService` no abren sockets de media, ni el proxy HTTP soporta streaming continuo.
+- El backend Java no actúa como media server: no recibe, mezcla ni reenvía paquetes de audio. Hacerlo implicaría implementar un SFU/relay o un protocolo de media sobre Ice, que no está presente.
+- El navegador no puede abrir sockets arbitrarios UDP/TCP al backend para audio crudo por políticas de seguridad; WebRTC es la vía estándar para media en web.
+- WebRTC crea pares `RTCPeerConnection` con control de ICE/SDP/STUN/TURN para atravesar NAT y negociar codecs. En este proyecto se usa solo la señalización (offer/answer/candidates) vía Ice/HTTP, y el audio viaja directamente P2P entre navegadores.
+- Con la arquitectura actual, solo las notas de voz pasan por el backend (se suben como archivo vía proxy/Ice). Para llamadas “reales” centralizadas habría que añadir un servidor de medios o un canal de streaming en Ice y modificar clientes/proxy.

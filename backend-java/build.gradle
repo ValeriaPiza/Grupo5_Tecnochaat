@@ -1,0 +1,90 @@
+plugins {
+    id 'java'
+}
+
+group 'com.tecnochat'
+version '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'com.zeroc:ice:3.7.9'
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+def sliceDir = file("src/main/ice")
+def generatedDir = file("src/main/generated")
+
+task slice(type: Exec) {
+    inputs.dir sliceDir
+    outputs.dir generatedDir
+    commandLine "slice2java", "--output-dir", generatedDir, "${sliceDir}/ChatService.ice"
+}
+
+compileJava.dependsOn slice
+
+sourceSets.main.java.srcDir generatedDir
+
+// ===============================================
+// TAREAS PARA EJECUTAR EL SERVIDOR Y EL CLIENTE
+// ===============================================
+task runServer(type: JavaExec) {
+    classpath sourceSets.main.runtimeClasspath
+    mainClass = 'com.tecnochat.server.Server'
+    workingDir file('.')
+}
+
+task runClient(type: JavaExec) {
+    classpath sourceSets.main.runtimeClasspath
+    mainClass = 'com.tecnochat.client.Client'
+    workingDir file('.')
+}
+
+// ===============================================
+// JAR del Servidor (por defecto con 'gradlew build')
+// ===============================================
+jar {
+    archiveBaseName = 'chat-server'
+    manifest {
+        attributes 'Main-Class': 'com.tecnochat.server.Server'
+    }
+    from {
+        sourceSets.main.output
+        sourceSets.main.runtimeClasspath
+            .filter { it.exists() }
+            .collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// ===============================================
+// JAR del Cliente
+// ===============================================
+task clientJar(type: Jar) {
+    archiveBaseName = 'chat-client'
+    manifest {
+        attributes(
+            'Main-Class': 'com.tecnochat.client.Client'
+        )
+    }
+    from {
+        sourceSets.main.output
+        sourceSets.main.runtimeClasspath
+            .filter { it.exists() }
+            .collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+task buildJars(dependsOn: [jar, clientJar]) {
+    group = 'build'
+    description = 'Builds both server and client executable JARs.'
+}
