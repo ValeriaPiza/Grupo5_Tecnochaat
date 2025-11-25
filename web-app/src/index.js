@@ -1,4 +1,8 @@
-const PROXY_URL = 'http://localhost:3002';
+const PROXY_URL =
+    window.APP_PROXY_URL ||
+    import.meta.env?.VITE_PROXY_URL ||
+    'http://localhost:3002';
+
 let currentUser = localStorage.getItem('tecnochat_username') || '';
 let knownGroups = JSON.parse(localStorage.getItem('tecnochat_groups') || '[]');
 let activeCallUser = null;
