@@ -8,10 +8,9 @@
 
 ## Descripción General
 
-En este proyecto creamos un chat grupal en tiempo real que conecta un cliente web con un servidor en Java, utilizando un proxy desarrollado en Node.js como intermediario.
+En este proyecto construimos un sistema de chat completo en tiempo real combinando diferentes tecnologías que trabajan juntas en armonía. Nuestro objetivo principal fue cumplir con la rúbrica del proyecto final, aplicando RPC con ZeroC Ice para la comunicación con el backend Java y WebSockets para reflejar comportamientos interactivos y dinámicos dentro del cliente web.
 
-Nuestro objetivo fue lograr cumplir con la rubrica y que diferentes tecnologías se comunicaran entre sí: el navegador (cliente web), el servidor de sockets (Java) y el proxy HTTP (Node).
-De esta forma, conseguimos que varios usuarios puedan chatear al mismo tiempo desde sus navegadores, enviar mensajes privados y participar en grupos.
+La arquitectura que implementamos permite que los usuarios puedan conectarse desde sus navegadores, enviar mensajes privados, participar en grupos, consultar historiales, enviar notas de voz y realizar llamadas de audio en tiempo real. Todo esto fue logrado integrando múltiples capas de software: un servidor Java como núcleo del sistema, un proxy Node.js como puente lógico y un cliente web moderno que gestiona la interacción del usuario.
 
 ## Componentes del proyecto 
 
@@ -19,28 +18,47 @@ El sistema está formado por tres partes principales que trabajan juntas:
 
 - Backend Java (Servidor Principal)
 Es el encargado de manejar toda la lógica del chat.
-Se comunica con clientes TCP y expone servicios RPC mediante ZeroC Ice. Se ocupa de distribuir los mensajes, mantener el historial y gestionar los grupos.
+Se comunica con clientes TCP y expone servicios RPC mediante ZeroC Ice. Se ocupa de distribuir los mensajes, mantener el historial, gestionar los grupos, gestionar usuarios activos y señalizacion para llamadas.
+
+El backend funciona como un servidor Ice que expone los servicios ChatService y CallService. Estos servicios reciben las peticiones del proxy Node.js y devuelven la información necesaria para que el cliente web se mantenga sincronizado.
+
+Este backend no transporta audio, ya que Ice solo se utiliza para mover datos discretos. La señalización de llamadas sí pasa por Ice (como quién llama a quién, quién acepta o cuelga), pero el audio se maneja en otro componente.
 
 - Servidor Proxy HTTP (Node.js + Express)
 Este componente funciona como un puente entre el cliente web y el servidor Java.
-Recibe las peticiones del navegador y las traduce a llamadas RPC (Ice) hacia el backend Java.
-También devuelve las respuestas del servidor al navegador.
+Este módulo cumple tres funciones clave:
+  -Recibe solicitudes del navegador (login, mensajes, grupos, notas de voz)    y las redirige al backend utilizando Ice.
+  -Se encarga de notificar al cliente web en tiempo real cuando llega un       mensaje, llega un mensaje privado, se envía un mensaje de grupo, se sube    una nota de audio y cuando hay una señal de llamada (call-offer, accept,    reject, hangup)
+  -Manejador de notas de voz se reciben desde el navegador, se convierten a    Base64 y se envían al backend Java para guardarlas y registrarlas en el     historial.
+  
+-Servidor WebSocket de Audio (Node.js independiente)
+Una de las partes más importantes y novedosas del proyecto es la implementación de un servidor dedicado para transportar audio en las llamadas, completamente separado del proxy principal.
+Lo que hace es que recibe frames de audio PCM crudo enviados por un usuario
+y los retransmite inmediatamente a los demás usuarios conectados, no guarda nada, solo actúa como “bridge” pero permite llamadas de audio fluidas.
 
 - Cliente Web (Interfaz de Usuario)
-Es la parte visual del sistema, desarrollada con HTML, CSS y JavaScript.
-Desde aquí los usuarios pueden conectarse, escribir mensajes, ver el chat en tiempo real y crear grupos con otros usuarios conectados.
+Es la parte visual del sistema, desarrollada con HTML, CSS y JavaScript Webpack.
+Desde aquí los usuarios pueden conectarse, escribir mensajes individuales y grupales, ver el chat en tiempo real, crear grupos con otros usuarios conectados observar el historial, enviar notas de voz y hacer llamadas.
 
 ## Cómo Funciona la Comunicación
 
 El cliente web envía un mensaje o una acción al proxy usando HTTP.
 
-El proxy (Node.js) traduce esa información y la envía por RPC (ZeroC Ice) al backend en Java (servicios `ChatService` y `CallService`).
+El cliente envía acciones al proxy vía HTTP (login, mensajes, grupos).
 
-El servidor Java procesa el mensaje y lo distribuye a los usuarios correspondientes (grupal, privado o por grupo), además de exponer historiales, creación de grupos y llamadas.
+El proxy traduce estas solicitudes a llamadas RPC Ice para el backend Java.
 
-La respuesta regresa al proxy, que la entrega de nuevo al cliente web.
+El backend procesa los mensajes, actualiza el historial o gestiona la señalización.
 
-Finalmente, el navegador actualiza la interfaz del chat en tiempo real.
+El proxy notifica al usuario (y a otros usuarios conectados) mediante WebSocket.
+
+Para llamadas:
+
+La señalización pasa por Ice/WS
+
+El audio fluye por el servidor WS de audio
+
+Así la interfaz del navegador se actualiza en tiempo real sin recargas y sin latencias perceptibles.
 
 ## Requisitos Previos
 
@@ -50,7 +68,7 @@ Finalmente, el navegador actualiza la interfaz del chat en tiempo real.
 - ZeroC Ice para Node.js (paquete npm `ice`) y, si necesitas generar stubs adicionales, `slice2js` en el PATH
 - Node.js (v18 o superior)
 - npm
-- Navegador web moderno
+- Navegador web moderno con soporte Web Audio API
 - https://www.zeroc.com/ice/downloads/3.7/java 
 
 ## Comandos útiles
@@ -61,24 +79,20 @@ Finalmente, el navegador actualiza la interfaz del chat en tiempo real.
 
 ## Instrucciones para Ejecutar el Sistema
 
-### Arranque rápido con script
-Desde la raíz del repo:
-1. Da permisos si es necesario: `chmod +x start-local.sh`
-2. Ejecuta: `./start-local.sh` (en Windows, usar Git Bash o WSL; en PowerShell/CMD puedes correr `bash start-local.sh` si tienes bash disponible)
-   - Levanta backend Java (`runServer`) en puerto TCP 6789 e Ice en 10000.
-   - Levanta proxy-node en puerto 3002 usando Ice (host/puerto configurables con `ICE_HOST` y `ICE_PORT`).
-   - Levanta web-app (webpack dev server, usualmente en http://localhost:8080).
-3. Detén todo con `kill <PIDs>` que el script imprime o `pkill -f "com.tecnochat.server.Server" node webpack`.
-
 ### Arranque manual
 - Backend Java:
-  - `cd backend-java`
-  - `./gradlew build`
-  - `./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
+  - cd backend-java
+  - ./gradlew build
+  - ./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
 - Proxy HTTP (Node):
-  - `cd proxy-node`
-  - `npm install`
-  - `ICE_HOST=localhost ICE_PORT=10000 PORT=3002 npm run start`
+  - cd proxy-node
+  - npm install
+  - npm run start
+- Servidor WebSocket de audio
+  - cd audio-server
+  - node audio-ws-server.mjs
+  -  Este servidor expone:
+    ws://localhost:9098/ws/audio/{username}
 - Cliente Web:
   - `cd web-app`
   - `npm install`
@@ -91,16 +105,14 @@ Desde la raíz del repo:
 - Historial: consulta de conversaciones privadas y de grupo.
 - Lista de usuarios conectados: visibilidad de quién está disponible.
 - Desconexión segura: logout sin afectar a otros usuarios.
-- Llamadas de audio (WebRTC): señalización vía Ice/HTTP; el navegador establece WebRTC (STUN público configurado en el front) y el backend almacena/entrega la señalización.
-- Notas de audio (web): se graban en el navegador y se suben al backend vía proxy/Ice; se guardan en `audio_history` y quedan registradas en el historial.
+- Nota de voz: se puede grabar, enviar y reproducir además se guardan en el   historial.
+- Llamadas de audio en tiempo real mediante WebSockets y Web Audio API.
+
 
 ## Nota sobre audio y backend
-- El backend Java/Ice solo transporta señalización de llamadas; el audio de las llamadas sigue siendo P2P WebRTC entre navegadores.
-- Las notas de audio sí pasan por el backend: se reciben vía `sendAudio`, se guardan en disco y se registran en el historial.
+- El backend Java solo maneja señalización, no transmite audio.
+- Las notas de voz sí pasan por el backend para almacenarse.
+- Las llamadas usan el servidor de audio basado en WebSockets.
+- El diseño permite una comunicación en tiempo real fluida, simple y          totalmente manejable desde Node.js.
 
-### Por qué no hay “llamada” por RPC/Ice y se usa WebRTC
-- Ice/RPC en este proyecto solo mueve datos discretos (mensajes, señalización). No hay un canal de transporte en tiempo real para audio: `ChatService`/`CallService` no abren sockets de media, ni el proxy HTTP soporta streaming continuo.
-- El backend Java no actúa como media server: no recibe, mezcla ni reenvía paquetes de audio. Hacerlo implicaría implementar un SFU/relay o un protocolo de media sobre Ice, que no está presente.
-- El navegador no puede abrir sockets arbitrarios UDP/TCP al backend para audio crudo por políticas de seguridad; WebRTC es la vía estándar para media en web.
-- WebRTC crea pares `RTCPeerConnection` con control de ICE/SDP/STUN/TURN para atravesar NAT y negociar codecs. En este proyecto se usa solo la señalización (offer/answer/candidates) vía Ice/HTTP, y el audio viaja directamente P2P entre navegadores.
-- Con la arquitectura actual, solo las notas de voz pasan por el backend (se suben como archivo vía proxy/Ice). Para llamadas “reales” centralizadas habría que añadir un servidor de medios o un canal de streaming en Ice y modificar clientes/proxy.
+
