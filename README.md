@@ -81,16 +81,16 @@ Así la interfaz del navegador se actualiza en tiempo real sin recargas y sin la
 
 ### Arranque manual
 - Backend Java:
-  - cd backend-java
-  - ./gradlew build
-  - ./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
+  - `cd backend-java´
+  - `./gradlew build´
+  - `./gradlew --no-daemon runServer` (expone TCP 6789 e Ice 10000)
 - Proxy HTTP (Node):
-  - cd proxy-node
-  - npm install
-  - npm run start
+  - `cd proxy-node´
+  - `npm install´
+  - `npm run start´
 - Servidor WebSocket de audio
-  - cd audio-server
-  - node audio-ws-server.mjs
+  - `cd audio-server´
+  - `node audio-ws-server.mjs´
   -  Este servidor expone:
     ws://localhost:9098/ws/audio/{username}
 - Cliente Web:
