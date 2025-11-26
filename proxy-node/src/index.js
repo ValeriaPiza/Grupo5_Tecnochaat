@@ -37,7 +37,11 @@ function broadcast(payload) {
 
 
 app.use(cors());
-app.use(express.json());
+
+// aceptar cuerpos JSON grandes (audio en base64)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
 
 // Cliente Ice persistente
 const iceClient = new IceClient({ host: ICE_HOST, port: ICE_PORT });

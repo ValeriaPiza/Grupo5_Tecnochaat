@@ -1,6 +1,8 @@
 const PROXY_URL = 'http://localhost:3002';
 const WS_URL = 'ws://localhost:3002';
+const AUDIO_WS_BASE = 'ws://localhost:9098/ws/audio';
 let ws = null;
+let audioWs = null;      //  WebSocket solo para audio de llamadas
 let currentUser = localStorage.getItem('tecnochat_username') || '';
 let knownGroups = JSON.parse(localStorage.getItem('tecnochat_groups') || '[]');
 let activeCallUser = null;
@@ -15,6 +17,13 @@ let callStartTime = null;
 let callTimerInterval = null;
 const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 let mediaRecorder = null;
+let audioContext = null;
+let micStream = null;
+let micSourceNode = null;
+let micProcessorNode = null;
+let playbackQueueTime = 0;
+const AUDIO_SAMPLE_RATE = 48000;  
+let inAudioCall = false;
 let recordedChunks = [];
 
 // Conexión WebSocket para actualizaciones en tiempo real (chat, audio, señales RTC)
@@ -226,7 +235,6 @@ function setUsername() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: currentUser })
         }).finally(() => {
-            stopSignalPolling();
             teardownCall(activeCallUser);
             currentUser = '';
             localStorage.removeItem('tecnochat_username');
@@ -256,9 +264,12 @@ function setUsername() {
             status.textContent = `Conectado como ${currentUser}`;
             input.disabled = true;
             if (btn) btn.textContent = 'Desconectar';
-            loadOnlineUsers(); // refrescar lista
-            connectWebSocket();
-            startSignalPolling();
+            loadOnlineUsers();
+
+            connectWebSocket();       // chat + señales
+            connectAudioWebSocket();  // audio de llamadas
+            //startSignalPolling();     //  polling como backup
+
         } else {
             status.textContent = `No se pudo conectar: ${result.error || 'desconocido'}`;
             currentUser = '';
@@ -441,7 +452,7 @@ async function loadHistory() {
         }
 
         if (!result.success) {
-            container.innerHTML = `<div class="status error">${result.error || 'Historial no disponible'}</div>`;
+            container.innerHTML = `<div class="status error">${result.error || 'Historial no disponible, No hay historial contigo mism@ porque las conversaciones son entre 2 usuarios distintos.'}</div>`;
             return;
         }
 
@@ -517,7 +528,7 @@ async function loadMessageFeed() {
     const type = document.getElementById('messageType')?.value || 'private';
     const recipient = type === 'private'
         ? document.getElementById('recipientSelect')?.value
-        : document.getElementById('recipientInput')?.value;
+        : document.getElementById('recipientGroupSelect')?.value;
 
     if (!feed) return;
 
@@ -763,7 +774,171 @@ async function loadGroupsList() {
     }
 }
 
-// ==== Señalización WebRTC vía proxy/Ice ====
+function connectAudioWebSocket() {
+    if (!currentUser) return;
+    if (audioWs && (audioWs.readyState === WebSocket.OPEN || audioWs.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
+    const url = `${AUDIO_WS_BASE}/${encodeURIComponent(currentUser)}`;
+    audioWs = new WebSocket(url);
+    audioWs.binaryType = 'arraybuffer';
+
+    audioWs.onopen = () => {
+        console.log(' Audio WS conectado para', currentUser);
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: AUDIO_SAMPLE_RATE
+            });
+            playbackQueueTime = audioContext.currentTime;
+        }
+    };
+
+    audioWs.onmessage = (event) => {
+        handleIncomingAudioChunk(event.data);
+    };
+
+    audioWs.onclose = () => {
+        console.log(' Audio WS cerrado');
+        audioWs = null;
+    };
+
+    audioWs.onerror = (err) => {
+        console.error('Error en Audio WS:', err);
+    };
+}
+
+async function startAudioStreaming() {
+    if (!audioWs || audioWs.readyState !== WebSocket.OPEN) {
+        console.warn('Audio WS no está conectado, no se puede iniciar streaming');
+        return;
+    }
+
+    inAudioCall = true;  
+
+    try {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                sampleRate: AUDIO_SAMPLE_RATE
+            });
+        }
+
+        if (!micStream) {
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+
+        micSourceNode = audioContext.createMediaStreamSource(micStream);
+
+        const bufferSize = 2048;
+        micProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+        micProcessorNode.onaudioprocess = (audioProcessingEvent) => {
+            if (!inAudioCall) return; 
+
+            const inputBuffer = audioProcessingEvent.inputBuffer;
+            const inputData = inputBuffer.getChannelData(0); // Float32
+
+            const pcmBuffer = new ArrayBuffer(inputData.length * 2);
+            const pcmView = new DataView(pcmBuffer);
+
+            for (let i = 0; i < inputData.length; i++) {
+                let s = Math.max(-1, Math.min(1, inputData[i]));
+                s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                pcmView.setInt16(i * 2, s, true); // Int16 little-endian
+            }
+
+            if (audioWs && audioWs.readyState === WebSocket.OPEN) {
+                audioWs.send(pcmBuffer);
+            }
+        };
+
+        micSourceNode.connect(micProcessorNode);
+        micProcessorNode.connect(audioContext.destination);
+
+
+        console.log(' Streaming de audio iniciado');
+    } catch (err) {
+        console.error('No se pudo iniciar captura de audio:', err);
+    }
+}
+
+
+
+
+function stopAudioStreaming() {
+    try {
+        inAudioCall = false;  //  marca que ya no hay llamada
+
+        if (micProcessorNode) {
+            micProcessorNode.disconnect();
+            micProcessorNode.onaudioprocess = null;
+            micProcessorNode = null;
+        }
+        if (micSourceNode) {
+            micSourceNode.disconnect();
+            micSourceNode = null;
+        }
+        if (micStream) {
+            micStream.getTracks().forEach(t => t.stop());
+            micStream = null;
+        }
+
+        if (audioContext) {
+            playbackQueueTime = audioContext.currentTime; // resetea la cola
+        }
+
+        console.log('Streaming de audio detenido');
+    } catch (err) {
+        console.error('Error al detener streaming de audio:', err);
+    }
+}
+
+
+
+
+
+function handleIncomingAudioChunk(arrayBuffer) {
+    // Si no hay llamada activa, ignora audio entrante
+    if (!inAudioCall) {
+        return;
+    }
+
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+            sampleRate: AUDIO_SAMPLE_RATE
+        });
+        playbackQueueTime = audioContext.currentTime;
+    }
+
+    const pcmView = new DataView(arrayBuffer);
+    const sampleCount = pcmView.byteLength / 2;
+    const float32Data = new Float32Array(sampleCount);
+
+    for (let i = 0; i < sampleCount; i++) {
+        const int16 = pcmView.getInt16(i * 2, true);
+        float32Data[i] = int16 < 0 ? (int16 / 0x8000) : (int16 / 0x7FFF);
+    }
+
+    const buffer = audioContext.createBuffer(1, sampleCount, AUDIO_SAMPLE_RATE);
+    buffer.copyToChannel(float32Data, 0, 0);
+
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+
+    const now = audioContext.currentTime;
+    const startTime = Math.max(playbackQueueTime, now);
+
+    source.connect(audioContext.destination);
+    source.start(startTime);
+
+    playbackQueueTime = startTime + buffer.duration;
+}
+
+
+
+
+
+
 async function sendRtcSignal(to, type, data) {
     if (!currentUser || !to || !type) return;
     await fetch(`${PROXY_URL}/api/webrtc/signal`, {
@@ -773,61 +948,11 @@ async function sendRtcSignal(to, type, data) {
     });
 }
 
-function startSignalPolling() {
-    if (signalPoller) return;
-    signalPoller = setInterval(fetchRtcSignals, 2000);
-}
 
-function stopSignalPolling() {
-    if (signalPoller) {
-        clearInterval(signalPoller);
-        signalPoller = null;
-    }
-}
-
-async function fetchRtcSignals() {
-    if (!currentUser) return;
-    try {
-        const res = await fetch(`${PROXY_URL}/api/webrtc/signals?user=${encodeURIComponent(currentUser)}`);
-        const result = await res.json();
-        (result.signals || []).forEach(handleRtcSignal);
-    } catch (err) {
-        const statusDiv = document.getElementById('callStatus');
-        showStatus('Error leyendo señalización: ' + err.message, 'error', statusDiv || document.createElement('div'));
-    }
-}
-
-async function ensureLocalStream() {
-    if (localStream) return localStream;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localStream = stream;
-    const localAudio = document.getElementById('localAudio');
-    if (localAudio) {
-        localAudio.srcObject = stream;
-        localAudio.style.display = 'block';
-    }
-    return stream;
-}
-
-function stopLocalStream() {
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-    }
-    localStream = null;
-}
-
-function attachRemoteStream(stream) {
-    remoteStream = stream;
-    const remoteAudio = document.getElementById('remoteAudio');
-    if (remoteAudio) {
-        remoteAudio.srcObject = stream;
-        remoteAudio.style.display = 'block';
-    }
-}
 
 function startRing(from) {
     if (!ringAudio) {
-        // coloca ring.mp3 en la raíz de web-app o en /public y usa esta ruta
+        
         ringAudio = new Audio('./ring.mp3');
         ringAudio.loop = true;
     }
@@ -838,7 +963,7 @@ function startRing(from) {
     if (incoming) {
         incoming.style.display = 'flex';
         incoming.innerHTML = `
-            📞 Llamada entrante de <strong>${from}</strong>
+             Llamada entrante de <strong>${from}</strong>
             <button class="btn" onclick="acceptCall('${from}')">Contestar</button>
             <button class="btn" style="background:#dc3545" onclick="rejectCall('${from}')">Rechazar</button>
         `;
@@ -893,164 +1018,132 @@ function stopCallTimer() {
     callStartTime = null;
 }
 
-async function getOrCreatePeer(remoteUser) {
-    if (peerConnections[remoteUser]) {
-        return peerConnections[remoteUser];
-    }
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    const stream = await ensureLocalStream();
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    pc.onicecandidate = (event) => {
-        if (event.candidate) {
-            sendRtcSignal(remoteUser, 'candidate', event.candidate);
-        }
-    };
-
-    pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-            attachRemoteStream(event.streams[0]);
-        }
-    };
-
-    pc.onconnectionstatechange = () => {
-        if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
-            teardownCall(remoteUser, `Conexión ${pc.connectionState}`);
-        }
-        if (pc.connectionState === 'connected' && !callStartTime) {
-            startCallTimer();
-        }
-    };
-
-    peerConnections[remoteUser] = pc;
-    pendingCandidates[remoteUser] = pendingCandidates[remoteUser] || [];
-    return pc;
-}
 
 function teardownCall(user, message) {
-    const target = user || activeCallUser;
-    if (target && peerConnections[target]) {
-        try {
-            peerConnections[target].onicecandidate = null;
-            peerConnections[target].ontrack = null;
-            peerConnections[target].close();
-        } catch (_) { /* ignore */ }
-        delete peerConnections[target];
-    }
-    delete pendingCandidates[target];
-    activeCallUser = null;
-    stopRing();
-    stopCallTimer();
-    stopLocalStream();
-    if (remoteStream) {
-        remoteStream.getTracks().forEach(t => t.stop());
-    }
-    remoteStream = null;
-    const remoteAudio = document.getElementById('remoteAudio');
-    if (remoteAudio) {
-        remoteAudio.srcObject = null;
-        remoteAudio.style.display = 'none';
-    }
     const statusDiv = document.getElementById('callStatus');
-    if (message && statusDiv) {
-        showStatus(message, 'error', statusDiv);
+    const target = user || activeCallUser;
+
+    // Detener captura y reproducción de audio
+    stopAudioStreaming();
+
+    // Limpiar estado interno
+    activeCallUser = null;
+    inAudioCall = false;      
+
+    // Detener sonido de llamada entrante
+    stopRing();
+
+    // Detener temporizador de llamada
+    stopCallTimer();
+
+    // Limpiar UI de llamada entrante
+    const incoming = document.getElementById('incomingCall');
+    if (incoming) {
+        incoming.style.display = 'none';
+        incoming.innerHTML = '';
     }
+
+    // Limpiar UI del temporizador
+    const timerDiv = document.getElementById('callTimer');
+    if (timerDiv) {
+        timerDiv.style.display = 'none';
+        timerDiv.textContent = 'Duración: 00:00';
+    }
+
+    // Actualizar lista de usuarios (botones de llamar/colgar)
     loadCallUsers();
+
+    //  Mensaje
+    if (message) {
+        showStatus(message, 'info', statusDiv || document.getElementById('callStatus'));
+    }
 }
 
-async function handleRtcSignal(signal) {
+
+
+function handleRtcSignal(signal) {
     try {
-        const { from, type, payload } = signal || {};
+        const { from, type } = signal || {};
         if (!from || !type) return;
 
-        if (type === 'hangup') {
-            teardownCall(from, `Llamada finalizada por ${from}`);
-            return;
-        }
+        const statusDiv = document.getElementById('callStatus');
 
-        if (type === 'offer') {
-            pendingOffers[from] = normalizeDescription(payload) || payload;
+        if (type === 'call-offer') {
+            // Llamada entrante
             startRing(from);
-            const statusDiv = document.getElementById('callStatus');
             showStatus(`Llamada entrante de ${from}`, 'success', statusDiv);
             return;
         }
 
-        if (type === 'answer' && peerConnections[from]) {
-            const desc = normalizeDescription(payload);
-            if (!desc) return;
-            await peerConnections[from].setRemoteDescription(new RTCSessionDescription(desc));
-            const statusDiv = document.getElementById('callStatus');
-            showStatus(`Respuesta recibida de ${from}.`, 'success', statusDiv);
-            await flushPendingCandidates(from);
+        if (type === 'call-accept') {
+            // como el otro usuario acepto la llamada iniciamos el audio
+            activeCallUser = from;
+            showStatus(`En llamada con ${from}`, 'success', statusDiv);
+            startAudioStreaming();
+            startCallTimer();     // ahora mostramos el botón de colgar
+            loadCallUsers();      // refrescamos tarjetas para que el boton quede activo
             return;
         }
 
-        if (type === 'candidate' && payload) {
-            const pc = peerConnections[from];
-            if (pc && pc.remoteDescription) {
-                await pc.addIceCandidate(new RTCIceCandidate(payload));
-            } else {
-                pendingCandidates[from] = pendingCandidates[from] || [];
-                pendingCandidates[from].push(payload);
-            }
+        if (type === 'call-reject') {
+            showStatus(`Llamada rechazada por ${from}`, 'error', statusDiv);
+            stopRing();
+            teardownCall(from);
+            return;
+        }
+
+        if (type === 'hangup') {
+            stopAudioStreaming();
+            teardownCall(from, `Llamada finalizada por ${from}`);
+            return;
         }
     } catch (err) {
-        const statusDiv = document.getElementById('callStatus');
-        showStatus('Error manejando señal RTC: ' + err.message, 'error', statusDiv || document.createElement('div'));
+        const statusDiv = document.getElementById('callStatus') || document.createElement('div');
+        showStatus('Error procesando señal de llamada: ' + err.message, 'error', statusDiv);
     }
 }
+
 
 async function acceptCall(from) {
     stopRing();
-    const offer = pendingOffers[from];
-    if (!offer) return;
+    if (!from) return;
+    const statusDiv = document.getElementById('callStatus');
+
     try {
-        const pc = await getOrCreatePeer(from);
-        const desc = normalizeDescription(offer);
-        if (!desc) {
-            throw new Error('Oferta inválida');
-        }
-        await pc.setRemoteDescription(new RTCSessionDescription(desc));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await sendRtcSignal(from, 'answer', pc.localDescription);
         activeCallUser = from;
-        const statusDiv = document.getElementById('callStatus');
+        await sendRtcSignal(from, 'call-accept', {});
         showStatus(`En llamada con ${from}`, 'success', statusDiv);
-        await flushPendingCandidates(from);
+
+        startAudioStreaming();
+        startCallTimer();   //  mostrar botón de colgar
+        loadCallUsers();    //  refrescar lista
     } catch (err) {
-        const statusDiv = document.getElementById('callStatus');
         showStatus('Error al contestar: ' + err.message, 'error', statusDiv || document.createElement('div'));
-    } finally {
-        delete pendingOffers[from];
+        activeCallUser = null;
     }
 }
+
+
+
 
 async function rejectCall(from) {
     stopRing();
-    delete pendingOffers[from];
-    await sendRtcSignal(from, 'hangup', {});
     const statusDiv = document.getElementById('callStatus');
-    showStatus(`Llamada rechazada de ${from}`, 'error', statusDiv || document.createElement('div'));
-}
-
-async function flushPendingCandidates(user) {
-    const pc = peerConnections[user];
-    const queue = pendingCandidates[user] || [];
-    if (!pc || !pc.remoteDescription || queue.length === 0) {
+    if (!from) {
+        showStatus('No hay llamada para rechazar', 'error', statusDiv);
         return;
     }
-    while (queue.length) {
-        const cand = queue.shift();
-        try {
-            await pc.addIceCandidate(new RTCIceCandidate(cand));
-        } catch (err) {
-            console.error('Error aplicando candidato pendiente', err);
-        }
+    try {
+        await sendRtcSignal(from, 'call-reject', {});
+        showStatus(`Llamada rechazada a ${from}`, 'success', statusDiv);
+    } catch (err) {
+        showStatus('Error al rechazar: ' + err.message, 'error', statusDiv || document.createElement('div'));
     }
-    pendingCandidates[user] = [];
 }
+
+
+
 
 async function loadCallUsers() {
     // reutiliza loadOnlineUsers para mantener fuentes consistentes
@@ -1100,19 +1193,18 @@ async function startCallUser(user) {
         showStatus(`Ya hay una llamada con ${activeCallUser}. Cuelga primero.`, 'error', statusDiv);
         return;
     }
-    try {
-        const pc = await getOrCreatePeer(user);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await sendRtcSignal(user, 'offer', pc.localDescription);
 
+    try {
         activeCallUser = user;
-        showStatus(`Oferta enviada a ${user}. Esperando respuesta...`, 'success', statusDiv);
+        await sendRtcSignal(user, 'call-offer', {});
+        showStatus(`Llamando a ${user}...`, 'success', statusDiv);
         loadCallUsers();
     } catch (error) {
+        activeCallUser = null;
         showStatus('Error iniciando llamada: ' + error.message, 'error', statusDiv);
     }
 }
+
 
 async function endCallUser(user) {
     const statusDiv = document.getElementById('callStatus');
@@ -1123,12 +1215,15 @@ async function endCallUser(user) {
     const target = user || activeCallUser;
     try {
         await sendRtcSignal(target, 'hangup', {});
+        stopAudioStreaming();
         teardownCall(target);
         showStatus(`Llamada terminada con ${target}`, 'success', statusDiv);
+        loadCallUsers();
     } catch (error) {
         showStatus('Error al terminar la llamada: ' + error.message, 'error', statusDiv);
     }
 }
+
 
 // Mostrar estado
 function showStatus(message, type, container) {
@@ -1214,4 +1309,7 @@ window.acceptCall = acceptCall;
 window.rejectCall = rejectCall;
 window.startAudioRecording = startAudioRecording;
 window.stopAndSendAudio = stopAndSendAudio;
+function refreshHistoryOptions() {
+    toggleHistoryInput();
+}
 window.refreshHistoryOptions = refreshHistoryOptions;
